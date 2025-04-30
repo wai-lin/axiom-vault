@@ -10,12 +10,11 @@ from ipv8.util import run_forever
 from ipv8_service import IPv8
 
 from ipv8.keyvault.crypto import ECCrypto
-import binascii
 
 
 @dataclass
 class MyMessage(DataClassPayload[1]):
-    pub_keys: str
+    pub_key: str
     signature: str
     nonce: int
 
@@ -44,9 +43,8 @@ class MyCommunity(Community):
                 for p in self.get_peers():
                     if p.public_key not in self.key_storage:
                         self.ez_send(p, MyMessage(
-                            pub_keys=self.my_pub_key_bin.hex(), signature=self.my_signature.hex(), nonce=self.lamport_clock))
+                            pub_key=self.my_pub_key_bin.hex(), signature=self.my_signature.hex(), nonce=self.lamport_clock))
                         self.key_storage.add(p.public_key)
-                # Prevent further execution of this initial communication task
                 self.cancel_pending_task("start_communication")
             else:
                 self.cancel_pending_task("start_communication")
@@ -57,33 +55,8 @@ class MyCommunity(Community):
     @lazy_wrapper(MyMessage)
     def on_message(self, peer: Peer, payload: MyMessage) -> None:
         self.lamport_clock = max(self.lamport_clock, payload.nonce) + 1
-        try:
-            received_pub_key_bytes = binascii.unhexlify(payload.pub_keys)
-            received_signature_bytes = binascii.unhexlify(payload.signature)
+        print(f"{self.my_peer} received from {peer}: pub_key={payload.pub_key}, signature={payload.signature}, current clock={self.lamport_clock}")
 
-            # Reconstruct the public key object from the received bytes
-            received_pub_key_object = self.key_gen.key_from_public_bin(
-                received_pub_key_bytes)
-
-            # Verify the signature
-            is_valid = self.key_gen.is_valid_signature(
-                ec=received_pub_key_object,
-                signature=received_signature_bytes,
-                data=received_pub_key_bytes  # Verify against the received public key bytes
-            )
-
-            print(f"{self.my_peer} received from {peer}: pub_keys={payload.pub_keys}, signature={payload.signature}, current clock={self.lamport_clock}, Signature Valid: {is_valid}")
-
-            if not is_valid:
-                print(
-                    f"WARNING: Signature verification failed for message from {peer}!")
-
-        except binascii.Error as e:
-            print(f"ERROR decoding hex data from {peer}: {e}")
-        except Exception as e:
-            print(f"ERROR verifying signature from {peer}: {e}")
-
-        # For Scenario 1 (initial information exchange), we don't immediately reply.
         pass
 
 
@@ -93,8 +66,8 @@ async def start_communities(num_instances: int = 3) -> None:
         builder = ConfigBuilder().clear_keys().clear_overlays()
         builder.add_key(f"peer_{i}", "medium", f"ec{i}.pem")
         builder.add_overlay("MyCommunity", f"peer_{i}",
-                            [WalkerDefinition(Strategy.RandomWalk,
-                                              10, {'timeout': 3.0})],
+                            [WalkerDefinition(Strategy.RandomWalk, 10, {
+                                              'timeout': 3.0})],
                             default_bootstrap_defs, {}, [('started',)])
         await IPv8(builder.finalize(),
                    extra_communities={'MyCommunity': MyCommunity}).start()
