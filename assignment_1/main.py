@@ -1,4 +1,3 @@
-import os
 from asyncio import run
 from dataclasses import dataclass
 
@@ -10,6 +9,9 @@ from ipv8.types import Peer
 from ipv8.util import run_forever
 from ipv8_service import IPv8
 
+from ipv8.keyvault.crypto import ECCrypto
+import binascii
+
 
 @dataclass
 class MyMessage(DataClassPayload[1]):
@@ -19,38 +21,73 @@ class MyMessage(DataClassPayload[1]):
 
 
 class MyCommunity(Community):
+
     community_id = b'harbourchainuniverse'
 
     def __init__(self, settings: CommunitySettings) -> None:
+
         super().__init__(settings)
         self.add_message_handler(MyMessage, self.on_message)
         self.lamport_clock = 0
-        # Unique identifier
-        self.pub_keys = f"Node-{self.my_peer.public_key.key_to_bin().hex()[:8]}"
-        self.signature = "InitialSignature"
+
+        self.key_gen = ECCrypto()
+        self.key_storage = set()
+
+        self.my_priv_key = self.key_gen.generate_key(security_level='very-low')
+        self.my_pub_key_bin = self.key_gen.key_to_bin(self.my_priv_key.pub())
+        self.my_signature = self.key_gen.create_signature(
+            ec=self.my_priv_key, data=self.my_pub_key_bin)
 
     def started(self) -> None:
         async def start_communication() -> None:
             if not self.lamport_clock:
                 for p in self.get_peers():
-                    self.ez_send(p, MyMessage(
-                        pub_keys=self.pub_keys, signature=self.signature, nonce=self.lamport_clock))
+                    if p.public_key not in self.key_storage:
+                        self.ez_send(p, MyMessage(
+                            pub_keys=self.my_pub_key_bin.hex(), signature=self.my_signature.hex(), nonce=self.lamport_clock))
+                        self.key_storage.add(p.public_key)
+                # Prevent further execution of this initial communication task
+                self.cancel_pending_task("start_communication")
             else:
                 self.cancel_pending_task("start_communication")
 
         self.register_task("start_communication",
-                           start_communication, interval=5.0, delay=0)
+                           start_communication, interval=5.0, delay=1)
 
     @lazy_wrapper(MyMessage)
     def on_message(self, peer: Peer, payload: MyMessage) -> None:
         self.lamport_clock = max(self.lamport_clock, payload.nonce) + 1
-        print(f"{self.my_peer} received from {peer}: pub_keys={payload.pub_keys}, signature={payload.signature}, current clock={self.lamport_clock}")
+        try:
+            received_pub_key_bytes = binascii.unhexlify(payload.pub_keys)
+            received_signature_bytes = binascii.unhexlify(payload.signature)
 
-        self.ez_send(peer, MyMessage(
-            pub_keys=self.pub_keys, signature=self.signature, nonce=self.lamport_clock))
+            # Reconstruct the public key object from the received bytes
+            received_pub_key_object = self.key_gen.key_from_public_bin(
+                received_pub_key_bytes)
+
+            # Verify the signature
+            is_valid = self.key_gen.is_valid_signature(
+                ec=received_pub_key_object,
+                signature=received_signature_bytes,
+                data=received_pub_key_bytes  # Verify against the received public key bytes
+            )
+
+            print(f"{self.my_peer} received from {peer}: pub_keys={payload.pub_keys}, signature={payload.signature}, current clock={self.lamport_clock}, Signature Valid: {is_valid}")
+
+            if not is_valid:
+                print(
+                    f"WARNING: Signature verification failed for message from {peer}!")
+
+        except binascii.Error as e:
+            print(f"ERROR decoding hex data from {peer}: {e}")
+        except Exception as e:
+            print(f"ERROR verifying signature from {peer}: {e}")
+
+        # For Scenario 1 (initial information exchange), we don't immediately reply.
+        pass
 
 
-async def start_communities(num_instances: int = 2) -> None:
+async def start_communities(num_instances: int = 3) -> None:
     """Starts multiple instances of the MyCommunity."""
     for i in range(num_instances):
         builder = ConfigBuilder().clear_keys().clear_overlays()
@@ -65,5 +102,5 @@ async def start_communities(num_instances: int = 2) -> None:
 
 
 if __name__ == "__main__":
-    num_instances_to_run = 2
+    num_instances_to_run = 3
     run(start_communities(num_instances_to_run))
