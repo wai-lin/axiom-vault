@@ -11,6 +11,8 @@ from ipv8.util import run_forever
 from ipv8_service import IPv8
 from ipv8.lazy_community import lazy_wrapper
 
+from assignment_1.db import Database
+
 
 @dataclass(msg_id=1)
 class TransactionMessage:
@@ -20,6 +22,10 @@ class TransactionMessage:
 
 class MyCommunity(Community, PeerObserver):
     community_id = b'harbourspaceuniverse'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tx_db = Database()
 
     async def generate_transaction(self) -> None:
         print("Generating transaction...")
@@ -51,6 +57,7 @@ class MyCommunity(Community, PeerObserver):
         signature = bytes.fromhex(payload.signature)
 
         if self.crypto.is_valid_signature(pub_key, nonce, signature):
+            self.tx_db.put(nonce, payload)
             print("Got a new valid transaction")
         else:
             print("Got bad transaction")
