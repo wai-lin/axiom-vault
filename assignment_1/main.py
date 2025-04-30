@@ -1,79 +1,87 @@
+import os
+import random
 from asyncio import run
-from dataclasses import dataclass
 
-from ipv8.community import Community, CommunitySettings
+from ipv8.messaging.payload_dataclass import dataclass
+from ipv8.community import Community
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
-from ipv8.lazy_community import lazy_wrapper
-from ipv8.messaging.payload_dataclass import DataClassPayload
+from ipv8.peerdiscovery.network import PeerObserver
 from ipv8.types import Peer
 from ipv8.util import run_forever
 from ipv8_service import IPv8
+from ipv8.lazy_community import lazy_wrapper
 
-from ipv8.keyvault.crypto import ECCrypto
 
-
-@dataclass
-class MyMessage(DataClassPayload[1]):
-    pub_key: str
+@dataclass(msg_id=1)
+class TransactionMessage:
+    public_key: str
     signature: str
     nonce: int
 
 
-class MyCommunity(Community):
+class MyCommunity(Community, PeerObserver):
+    community_id = b'harbourspaceuniverse'
 
-    community_id = b'harbourchainuniverse'
+    async def generate_transaction(self) -> None:
+        print("Generating transaction...")
 
-    def __init__(self, settings: CommunitySettings) -> None:
+        nonce = random.randint(1, 1_000_000)
+        signature = self.crypto.create_signature(
+            self.my_peer.key, nonce.to_bytes(8))
 
-        super().__init__(settings)
-        self.add_message_handler(MyMessage, self.on_message)
-        self.lamport_clock = 0
+        self.send_transaction(TransactionMessage(
+            nonce=nonce,
+            signature=signature.hex(),
+            public_key=self.crypto.key_to_bin(self.my_peer.public_key).hex()
+        ))
 
-        self.key_gen = ECCrypto()
-        self.key_storage = set()
+    def send_transaction(self, tx_message: TransactionMessage):
+        print("Sending transaction. Nonce:", tx_message.nonce)
+        for peer in self.get_peers():
+            self.ez_send(peer, tx_message)
 
-        self.my_priv_key = self.key_gen.generate_key(security_level='very-low')
-        self.my_pub_key_bin = self.key_gen.key_to_bin(self.my_priv_key.pub())
-        self.my_signature = self.key_gen.create_signature(
-            ec=self.my_priv_key, data=self.my_pub_key_bin)
+    def on_peer_added(self, peer: Peer) -> None:
+        print("I am:", self.my_peer, "I found:", peer)
 
-    def started(self) -> None:
-        async def start_communication() -> None:
-            if not self.lamport_clock:
-                for p in self.get_peers():
-                    if p.public_key not in self.key_storage:
-                        self.ez_send(p, MyMessage(
-                            pub_key=self.my_pub_key_bin.hex(), signature=self.my_signature.hex(), nonce=self.lamport_clock))
-                        self.key_storage.add(p.public_key)
-                self.cancel_pending_task("start_communication")
-            else:
-                self.cancel_pending_task("start_communication")
-
-        self.register_task("start_communication",
-                           start_communication, interval=5.0, delay=1)
-
-    @lazy_wrapper(MyMessage)
-    def on_message(self, peer: Peer, payload: MyMessage) -> None:
-        self.lamport_clock = max(self.lamport_clock, payload.nonce) + 1
-        print(f"{self.my_peer} received from {peer}: pub_key={payload.pub_key}, signature={payload.signature}, current clock={self.lamport_clock}")
-
+    def on_peer_removed(self, peer: Peer) -> None:
         pass
 
+    @lazy_wrapper(TransactionMessage)
+    def on_transaction_message(self, peer: Peer, payload: TransactionMessage):
+        nonce = int(payload.nonce).to_bytes(8)
+        pub_key = self.crypto.key_from_public_bin(
+            bytes.fromhex(payload.public_key))
+        signature = bytes.fromhex(payload.signature)
 
-async def start_communities(num_instances: int = 3) -> None:
-    """Starts multiple instances of the MyCommunity."""
-    for i in range(num_instances):
+        if self.crypto.is_valid_signature(pub_key, nonce, signature):
+            print("Got a new valid transaction")
+        else:
+            print("Got bad transaction")
+
+    def started(self) -> None:
+        self.network.add_peer_observer(self)
+
+        self.add_message_handler(
+            TransactionMessage, self.on_transaction_message)
+
+        self.register_task('generate_transaction',
+                           self.generate_transaction, interval=5.0, delay=0)
+
+
+async def start_communities() -> None:
+    for i in [1, 2]:
         builder = ConfigBuilder().clear_keys().clear_overlays()
-        builder.add_key(f"peer_{i}", "medium", f"ec{i}.pem")
-        builder.add_overlay("MyCommunity", f"peer_{i}",
-                            [WalkerDefinition(Strategy.RandomWalk, 10, {
-                                              'timeout': 3.0})],
+        builder.add_key("my peer", "medium", f"ec_{i}.pem")
+        # We provide the 'started' function to the 'on_start'.
+        # We will call the overlay's 'started' function without any
+        # arguments once IPv8 is initialized.
+        builder.add_overlay("MyCommunity", "my peer",
+                            [WalkerDefinition(Strategy.RandomWalk,
+                                              10, {'timeout': 3.0})],
                             default_bootstrap_defs, {}, [('started',)])
         await IPv8(builder.finalize(),
                    extra_communities={'MyCommunity': MyCommunity}).start()
     await run_forever()
 
 
-if __name__ == "__main__":
-    num_instances_to_run = 3
-    run(start_communities(num_instances_to_run))
+run(start_communities())
