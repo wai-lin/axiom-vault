@@ -73,7 +73,7 @@ class MyCommunity(Community, PeerObserver):
                            self.generate_transaction, interval=5.0, delay=0)
 
 
-async def run_community():
+async def run_community(i):
     builder = ConfigBuilder().clear_keys().clear_overlays()
     builder.add_key("my peer", "medium", f"ec_{i}.pem")
     # We provide the 'started' function to the 'on_start'.

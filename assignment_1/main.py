@@ -6,7 +6,7 @@ from assignment_1.community import run_community
 
 async def start_communities() -> None:
     for i in [1, 2]:
-        await run_community()
+        await run_community(i)
     await run_forever()
 
 
