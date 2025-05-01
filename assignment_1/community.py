@@ -8,7 +8,7 @@ from ipv8.types import Peer
 from ipv8_service import IPv8
 from ipv8.lazy_community import lazy_wrapper
 
-from assignment_1.db import Database
+from db import Database
 
 
 @dataclass(msg_id=1)
