@@ -11,6 +11,8 @@ from messages import Message, MessagesCollection, GetMessages
 
 from db import Database
 
+db = Database()
+
 
 class MessageContainer:
     def __init__(self, msg: Message):
@@ -52,8 +54,6 @@ class BlockchainCommunity(Community, PeerObserver):
         self._connected_peers = set()
         self.__messages = {}  # Initialize messages dictionary
 
-        self.db = Database()  # Database Instance
-
         self.register_task("ensure_full_connectivity",
                            self.ensure_full_connectivity, interval=10.0, delay=5.0)
 
@@ -68,7 +68,6 @@ class BlockchainCommunity(Community, PeerObserver):
 
     def on_peer_added(self, peer: Peer) -> None:
         print("I am:", self.my_peer, "I found:", peer)
-        self.db.update(self.my_peer.address, peer.address)
         self.walk_to(peer.address)
         self._connected_peers.add(peer)
 
@@ -94,6 +93,8 @@ class BlockchainCommunity(Community, PeerObserver):
     async def messages_collection_handler(self, peer: Peer, payload: MessagesCollection):
         print(
             f"{self.my_peer.address.port}: received from {peer.address.port}", payload.messages)
+
+        db.update(peer.address.port, self.my_peer.address.port)
 
         decoded_messages = json.loads(payload.messages)
         for msg_content in decoded_messages:
