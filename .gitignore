@@ -2,3 +2,7 @@
 .DS_Store
 .idea
 __pycache__
+.venv
+database.json
+note.txt
+*.png

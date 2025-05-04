@@ -10,6 +10,7 @@ from ipv8.peerdiscovery.discovery import RandomWalk
 from messages import Message, MessagesCollection, GetMessages
 
 from db import Database
+from visualizer import TopologyPlotter, layouts
 
 db = Database()
 
@@ -152,3 +153,18 @@ class BlockchainCommunity(Community, PeerObserver):
             interval=10,
             delay=0
         )
+
+        self.register_task(
+            "plot_topology_periodically",
+            self.plot_topology_periodically, 
+            interval=30.0,
+            delay=20.0
+        )
+
+    async def plot_topology_periodically(self) -> None:
+        try:
+            plotter = TopologyPlotter()
+            for layout in layouts:
+                plotter.plot(layout=layout)
+        except Exception as e:
+            print(f"Failed to plot topology: {e}")

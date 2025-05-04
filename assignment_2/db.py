@@ -31,3 +31,14 @@ class Database:
         elif receiver not in self.data[sender]:
             self.data[sender].append(receiver)
         self.save_data()
+
+    def get_edges(self):
+        """
+        generate edge list
+        "8092": [8090, 8091],
+        """
+        edges = []
+        for sender, receivers in self.data.items():
+            for receiver in receivers:
+                edges.append((str(sender), str(receiver)))
+        return edges
