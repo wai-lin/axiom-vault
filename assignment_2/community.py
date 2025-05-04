@@ -9,6 +9,11 @@ from ipv8.peerdiscovery.network import PeerObserver
 from ipv8.peerdiscovery.discovery import RandomWalk
 from messages import Message, MessagesCollection, GetMessages
 
+from db import Database
+from visualizer import TopologyPlotter, layouts
+
+db = Database()
+
 
 class MessageContainer:
     def __init__(self, msg: Message):
@@ -27,7 +32,7 @@ class DenseRandomWalk(RandomWalk):
     Dense And Sparse Random Walk Strategy
     return:
     """
-    
+
     def __init__(self, overlay, **kwargs):
         super().__init__(overlay, **kwargs)
         self.community = overlay
@@ -90,6 +95,8 @@ class BlockchainCommunity(Community, PeerObserver):
         print(
             f"{self.my_peer.address.port}: received from {peer.address.port}", payload.messages)
 
+        db.update(peer.address.port, self.my_peer.address.port)
+
         decoded_messages = json.loads(payload.messages)
         for msg_content in decoded_messages:
             message = Message(content=msg_content)
@@ -146,3 +153,18 @@ class BlockchainCommunity(Community, PeerObserver):
             interval=10,
             delay=0
         )
+
+        self.register_task(
+            "plot_topology_periodically",
+            self.plot_topology_periodically, 
+            interval=30.0,
+            delay=20.0
+        )
+
+    async def plot_topology_periodically(self) -> None:
+        try:
+            plotter = TopologyPlotter()
+            for layout in layouts:
+                plotter.plot(layout=layout)
+        except Exception as e:
+            print(f"Failed to plot topology: {e}")
