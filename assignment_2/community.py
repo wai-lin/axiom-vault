@@ -9,6 +9,8 @@ from ipv8.peerdiscovery.network import PeerObserver
 from ipv8.peerdiscovery.discovery import RandomWalk
 from messages import Message, MessagesCollection, GetMessages
 
+from db import Database
+
 
 class MessageContainer:
     def __init__(self, msg: Message):
@@ -27,7 +29,7 @@ class DenseRandomWalk(RandomWalk):
     Dense And Sparse Random Walk Strategy
     return:
     """
-    
+
     def __init__(self, overlay, **kwargs):
         super().__init__(overlay, **kwargs)
         self.community = overlay
@@ -50,6 +52,8 @@ class BlockchainCommunity(Community, PeerObserver):
         self._connected_peers = set()
         self.__messages = {}  # Initialize messages dictionary
 
+        self.db = Database()  # Database Instance
+
         self.register_task("ensure_full_connectivity",
                            self.ensure_full_connectivity, interval=10.0, delay=5.0)
 
@@ -64,6 +68,7 @@ class BlockchainCommunity(Community, PeerObserver):
 
     def on_peer_added(self, peer: Peer) -> None:
         print("I am:", self.my_peer, "I found:", peer)
+        self.db.update(self.my_peer.address, peer.address)
         self.walk_to(peer.address)
         self._connected_peers.add(peer)
 
