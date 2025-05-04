@@ -6,8 +6,9 @@ from asyncio import run
 
 from community import BlockchainCommunity
 
-async def start_communities() -> None:
-    for i in range(2):
+
+async def start_communities(num_communities: int) -> None:
+    for i in range(num_communities):
         builder = ConfigBuilder().clear_keys().clear_overlays()
         builder.add_key("my peer", "medium", f"ec_{i}.pem")
         # We provide the 'started' function to the 'on_start'.
@@ -22,4 +23,4 @@ async def start_communities() -> None:
 
     await run_forever()
 
-run(start_communities())
+run(start_communities(2))
