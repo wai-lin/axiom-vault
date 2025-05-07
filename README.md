@@ -20,6 +20,7 @@ marshmallow
 typing-extensions
 packaging
 apispec>=6.0.0
+plyvel
 ```
 ---
 
