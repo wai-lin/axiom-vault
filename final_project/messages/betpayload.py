@@ -1,4 +1,6 @@
 from ipv8.messaging.payload_dataclass import dataclass
+
+
 import hashlib
 import json
 
