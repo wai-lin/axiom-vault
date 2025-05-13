@@ -4,28 +4,19 @@ from typing import List, Optional
 from messages.betpayload import BetPayload
 
 
-# Make Sure That The Mempool is Singleton
-# Please Switch this back to Multiton Pattern when running Multi Node in Single Computer
-
 class Mempool:
     _instance = None
+    _initialized = False
 
-    def __new__(cls, singleton=False):
-        if singleton:
-            if cls._instance is None:
-                cls._instance = super(Mempool, cls).__new__(cls)
-                cls._instance.mempool = {}
-            return cls._instance
-        else:
-            instance = super(Mempool, cls).__new__(cls)
-            instance.mempool = {}
-            return instance
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(Mempool, cls).__new__(cls)
+        return cls._instance
 
-    def __init__(self, singleton=False):
-        # This init will only be called for the first instance in singleton mode
-        # or for every instance in multi mode.
-        if not singleton or not hasattr(self, 'mempool'):
+    def __init__(self):
+        if not Mempool._initialized:
             self.mempool = {}
+            Mempool._initialized = True
 
     def add_transaction(self, txid: str, value: BetPayload):
         if txid in self.mempool:
