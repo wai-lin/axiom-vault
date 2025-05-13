@@ -1,15 +1,8 @@
 from asyncio import run
 
-from ipv8_service import IPv8
-from ipv8.util import run_forever
+from network import start_network
+
+PEER_COUNT = 3
 
 
-async def start():
-    ipv8 = IPv8()
-
-    await ipv8.start()
-
-    await run_forever()
-
-
-run(start())
+run(start_network(PEER_COUNT))

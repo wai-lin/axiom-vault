@@ -6,6 +6,10 @@ from pathlib import Path
 def main():
     workspace = Path.cwd()
     for pem_file in workspace.rglob("*.pem"):
+        # Skip files inside any .venv directory
+        if ".venv" in pem_file.parts:
+            continue
+
         try:
             pem_file.unlink()
             print(f"Deleted: {pem_file}")
