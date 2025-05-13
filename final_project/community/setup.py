@@ -11,8 +11,9 @@ from ipv8.types import Peer
 from ipv8_service import IPv8
 from ipv8.lazy_community import lazy_wrapper
 
-from db.instance import Mempool
-from messages.betpayload import BetPayload, GetTransactionsRequest, TransactionsResponse
+from db.mempool import Mempool
+from messages.betpayload import BetPayload
+from messages.transaction import TransactionsRequest, TransactionsResponse
 
 
 class MyCommunity(Community, PeerObserver):
@@ -22,7 +23,7 @@ class MyCommunity(Community, PeerObserver):
         super().__init__(*args, **kwargs)
 
         self._connected_peers = set()
-        self.tx_db = Mempool()
+        self.tx_mempool = Mempool()
         self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
 
         self.register_task("ensure_full_connectivity",
@@ -31,12 +32,11 @@ class MyCommunity(Community, PeerObserver):
                            self.request_transactions, interval=5.0, delay=2.0)
 
         self.add_message_handler(
-            GetTransactionsRequest, self.on_get_transactions_request)
+            TransactionsRequest, self.on_get_transactions_request)
         self.add_message_handler(TransactionsResponse,
                                  self.on_transactions_response)
 
     # Peer Set up
-
     def on_peer_added(self, peer: Peer) -> None:
         print("I am:", self.my_peer, "I found:", peer)
         self.walk_to(peer.address)
@@ -68,8 +68,17 @@ class MyCommunity(Community, PeerObserver):
         bet_number = random.randint(1, 100)
         bet_amount = random.randint(1, 100)
         timestamp = time.time()
+
+        block = {
+            "bettor_id": bettor_id,
+            "bet_number": bet_number,
+            "bet_amount": bet_amount,
+            "timestamp": timestamp
+        }
+
         signature = self.crypto.create_signature(
-            self.my_peer.key, str(timestamp).encode())
+            self.my_peer.key, str(block).encode())
+
         payload = BetPayload(
             bettor_id=bettor_id,
             bet_number=bet_number,
@@ -77,7 +86,8 @@ class MyCommunity(Community, PeerObserver):
             timestamp=timestamp,
             signature=signature.hex(),
         )
-        self.tx_db.add_transaction(payload._generate_txid(), payload)
+
+        self.tx_mempool.add_transaction(payload._generate_txid(), payload)
         print(f"Generated and stored transaction: {payload._generate_txid()}")
 
     # Removed the dual-purpose request, now a dedicated request
@@ -86,25 +96,25 @@ class MyCommunity(Community, PeerObserver):
         for peer in self.get_peers():
             peer_id_hex = peer.public_key.key_to_bin().hex()
             last_seen = self.latest_tx_timestamps.get(peer_id_hex, 0.0)
-            self.ez_send(peer, GetTransactionsRequest(
+            self.ez_send(peer, TransactionsRequest(
                 last_seen_timestamp=last_seen))
 
     @lazy_wrapper(BetPayload)
     def on_transaction_message(self, peer: Peer, payload: BetPayload):
         # This handler is now solely for processing incoming transactions
-        bettor_id_key = self.crypto.key_from_public_bin(
+        public_key = self.crypto.key_from_public_bin(
             bytes.fromhex(payload.bettor_id))
-        timestamp_bytes = str(payload.timestamp).encode()
+
+        enocde_byte = str(payload).encode()
+
         signature_bytes = bytes.fromhex(payload.signature)
 
-        if self.crypto.is_valid_signature(bettor_id_key, timestamp_bytes, signature_bytes):
+        if self.crypto.is_valid_signature(public_key, enocde_byte, signature_bytes):
             txid = payload._generate_txid()
-            if not self.tx_db.get_transaction(txid):
-                tx_dict = asdict(payload)
-                self.tx_db.db[txid] = tx_dict
+            if not self.tx_mempool.get_transaction(txid):
+                self.tx_mempool.add_transaction(payload)
                 print(
                     f"Received and added valid transaction {txid} from {peer.address.port}")
-                # Update timestamp upon receiving a new transaction
                 peer_id_hex = peer.public_key.key_to_bin().hex()
                 self.latest_tx_timestamps[peer_id_hex] = max(
                     self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp)
@@ -116,8 +126,8 @@ class MyCommunity(Community, PeerObserver):
         else:
             print(f"Received invalid transaction from {peer.address.port}")
 
-    @lazy_wrapper(GetTransactionsRequest)
-    def on_get_transactions_request(self, peer: Peer, payload: GetTransactionsRequest):
+    @lazy_wrapper(TransactionsRequest)
+    def on_get_transactions_request(self, peer: Peer, payload: TransactionsRequest):
         print(
             f"Received request for transactions since {payload.last_seen_timestamp} from {peer.address.port}")
         latest_txs = self.get_latest_transactions(payload.last_seen_timestamp)
@@ -134,8 +144,8 @@ class MyCommunity(Community, PeerObserver):
             for tx_data in transactions_data:
                 tx = BetPayload(**tx_data)
                 txid = tx._generate_txid()
-                if not self.tx_db.get_transaction(txid):
-                    self.tx_db.db[txid] = tx_data
+                if not self.tx_mempool.get_transaction(txid):
+                    self.tx_mempool.add_transaction(tx_data)
                     print(f"Added received transaction: {txid}")
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
@@ -150,7 +160,7 @@ class MyCommunity(Community, PeerObserver):
 
     def get_latest_transactions(self, last_seen_timestamp: float) -> list[BetPayload]:
         latest_txs = []
-        for txid, tx_data in self.tx_db.db.items():
+        for txid, tx_data in self.tx_mempool.db.items():
             if tx_data and tx_data.get('timestamp', 0.0) > last_seen_timestamp:
                 latest_txs.append(BetPayload(**tx_data))
         return latest_txs
