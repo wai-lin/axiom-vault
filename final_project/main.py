@@ -1,6 +1,6 @@
 from asyncio import run
 
-from network import start_network
+from network.setup import start_network
 
 PEER_COUNT = 3
 

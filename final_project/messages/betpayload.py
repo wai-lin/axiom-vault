@@ -1,4 +1,6 @@
 from ipv8.messaging.payload_dataclass import dataclass
+
+
 import hashlib
 import json
 
@@ -21,3 +23,13 @@ class BetPayload:
         payload_bytes = json.dumps(
             payload_data, sort_keys=True).encode('utf-8')
         return hashlib.sha256(payload_bytes).hexdigest()
+
+
+@dataclass(msg_id=2)
+class GetTransactionsRequest:
+    last_seen_timestamp: float
+
+
+@dataclass(msg_id=3)
+class TransactionsResponse:
+    transactions: str
