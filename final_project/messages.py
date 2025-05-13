@@ -1,5 +1,6 @@
 from ipv8.messaging.payload_dataclass import dataclass
 
+
 @dataclass(msg_id=1)
 class BetTicketMessage:
     bettor_id: str

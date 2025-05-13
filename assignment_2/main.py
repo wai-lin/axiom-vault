@@ -23,4 +23,4 @@ async def start_communities(num_communities: int) -> None:
 
     await run_forever()
 
-run(start_communities(8))
+run(start_communities())
