@@ -160,9 +160,9 @@ class MyCommunity(Community, PeerObserver):
 
     def get_latest_transactions(self, last_seen_timestamp: float) -> list[BetPayload]:
         latest_txs = []
-        for txid, tx_data in self.tx_mempool.db.items():
-            if tx_data and tx_data.get('timestamp', 0.0) > last_seen_timestamp:
-                latest_txs.append(BetPayload(**tx_data))
+        for tx in self.tx_mempool.get_all_transaction():
+            if tx.timestamp > last_seen_timestamp:
+                latest_txs.append(tx)
         return latest_txs
 
     def started(self) -> None:
