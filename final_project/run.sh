@@ -1,9 +1,9 @@
 #!/bin/bash
 
-for i in {1..3}
+for i in {1}
 do
-  python main.py &
-  sleep 0.2
+  python main.py ${i} &
+  sleep 1
 done
 
 wait
