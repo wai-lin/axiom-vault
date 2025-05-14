@@ -2,6 +2,7 @@ import random
 import time
 from dataclasses import asdict
 import json
+import os
 
 
 from ipv8.community import Community
@@ -18,13 +19,14 @@ from messages.betpayload import BetPayload
 from messages.transaction import TransactionsRequest, TransactionsResponse
 from messages.blockchain import BlockChain
 from messages.result import LotteryResult
+from utils.discovery_log import WalkLogger
 
 
 class MyCommunity(Community, PeerObserver):
     community_id = b"harbourspaceuniverse"
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, settings) -> None:
+        super().__init__(settings)
 
         # Connected Peers
         self._connected_peers = set()
@@ -34,12 +36,15 @@ class MyCommunity(Community, PeerObserver):
 
         # Connections
         self.tx_mempool = Mempool()
-        print(f"mempool id: {id(self.tx_mempool)}")
         self.chain = BlockChain(chain=[], round=1)
         self.chain_manager = BlockChainManager(chain=self.chain)
 
         # Broadcast
         self.is_lottery_broadcaster = False
+
+        # utils
+        self.node_id = settings.node_id
+        self.walk_logger = WalkLogger(self.node_id)
 
         # Tasks
         self.register_task(
@@ -49,7 +54,7 @@ class MyCommunity(Community, PeerObserver):
             delay=3.0,
         )
         self.register_task(
-            "request_transactions", self.request_transactions, interval=5.0, delay=1.0
+            "request_transactions", self.request_transactions, interval=5.0, delay=5.0
         )
 
         self.register_task(
@@ -80,8 +85,9 @@ class MyCommunity(Community, PeerObserver):
 
     # Peer Set up
     def on_peer_added(self, peer: Peer) -> None:
-        print("I am:", self.my_peer, "I found:", peer)
+        print(f"{[self.node_id]}: found {peer}")
         self.walk_to(peer.address)
+        self.walk_logger.update(self.my_peer.mid.hex(), peer.mid.hex())
         self._connected_peers.add(peer)
         # Initialize timestamp
         self.latest_tx_timestamps[peer.public_key.key_to_bin().hex()] = 0.0
@@ -93,13 +99,15 @@ class MyCommunity(Community, PeerObserver):
         if peer_id in self.latest_tx_timestamps:
             del self.latest_tx_timestamps[peer_id]
 
+    # TODO: is this method necessary?
     async def ensure_full_connectivity(self):
         connected_peers = set(self.network.verified_peers)
         for peer in connected_peers:
-            peer_id = peer.public_key.key_to_bin().hex()
             if peer not in self._connected_peers:
+                peer_id = peer.public_key.key_to_bin().hex()
                 self._connected_peers.add(peer)
                 self.walk_to(peer.address)
+                self.walk_logger.update(self.my_peer.mid.hex(), peer.mid.hex())
                 self.latest_tx_timestamps[peer_id] = 0.0
                 print(f"Connecting to previously discovered peer: {peer}")
 

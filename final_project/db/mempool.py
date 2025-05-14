@@ -52,6 +52,4 @@ class Mempool:
         return latest_txs
 
     def clear_mempool(self):
-        print(f'before clear mempool: {id(self)}')
         self._mempool.clear()
-        print(f'after clear mempool: {id(self)}')
