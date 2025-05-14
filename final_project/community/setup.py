@@ -146,7 +146,9 @@ class MyCommunity(Community, PeerObserver):
         if self.crypto.is_valid_signature(public_key, enocde_byte, signature_bytes):
             txid = payload._generate_txid()
             if not self.tx_mempool.get_transaction(txid):
-                self.tx_mempool.add_transaction(payload)
+                self.tx_mempool.add_transaction(
+                    payload._generate_txid(), payload)
+
                 print(
                     f"Received and added valid transaction {txid} from {peer.address.port}")
                 peer_id_hex = peer.public_key.key_to_bin().hex()
@@ -179,7 +181,8 @@ class MyCommunity(Community, PeerObserver):
                 tx = BetPayload(**tx_data)
                 txid = tx._generate_txid()
                 if not self.tx_mempool.get_transaction(txid):
-                    self.tx_mempool.add_transaction(tx_data)
+                    self.tx_mempool.add_transaction(
+                        tx._generate_txid(), tx)
                     print(f"Added received transaction: {txid}")
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
