@@ -52,4 +52,4 @@ class Mempool:
         return latest_txs
 
     def clear_mempool(self):
-        self._mempool.clear()
+        self._mempool = {}
