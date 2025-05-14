@@ -9,10 +9,10 @@ from community.setup import MyCommunity
 import random
 
 
-async def start_network():
+async def start_network(i: int):
 
     builder = ConfigBuilder().clear_keys().clear_overlays()
-    builder.add_key("my peer", "medium", f"ec_{random.randint(1, 1000)}.pem")
+    builder.add_key("my peer", "medium", f"ec_{i}.pem")
 
     builder.add_overlay("MyCommunity", "my peer",
                         [WalkerDefinition(Strategy.RandomWalk,

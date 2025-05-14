@@ -12,7 +12,7 @@ import random
 from typing import Optional, Dict
 
 
-class BlockChainManager():
+class BlockChainManager:
 
     def __init__(self, chain: BlockChain):
         self.block_chain = chain
@@ -38,15 +38,17 @@ class BlockChainManager():
         if self.db:
             self.db.save_block(genesis_block._to_dict())
 
-    def create_block(
-        self
-    ) -> Optional[Block]:
+    def create_block(self) -> Optional[Block]:
+        print(f"block creation every 10 sec from mempool {id(self.mempool)}")
+        print(
+            f"current mempool size: {len(self.mempool.get_all_transactions())} and id: {id(self.mempool)}"
+        )
         if not self.mempool:
 
             transactions = []
         else:
             transactions = self.mempool.get_all_transactions()
-            self.mempool = self.mempool.clear_mempool()
+            self.mempool.clear_mempool()
 
         new_block = Block(
             index=len(self.block_chain.chain),
@@ -58,6 +60,7 @@ class BlockChainManager():
         )._calculate_block_hash()
 
         self.block_chain.chain.append(new_block)
+        print(f"chain height: {len(self.block_chain.chain)}")
         if self.db:
             self.db.save_block(new_block._to_dict())
 
