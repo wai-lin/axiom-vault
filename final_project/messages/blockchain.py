@@ -13,7 +13,7 @@ import json
 BLOCKS_PER_ROUND = 12
 
 
-@dataclass(msg_id=4)
+@dataclass(msg_id=5)
 class BlockChain:
     chain: list[Block]
     round: int

@@ -1,4 +1,3 @@
-# main.py (or your community file)
 import random
 import time
 from dataclasses import asdict
@@ -18,6 +17,7 @@ from manager.blockchain_manager import BlockChainManager
 from messages.betpayload import BetPayload
 from messages.transaction import TransactionsRequest, TransactionsResponse
 from messages.blockchain import BlockChain
+from messages.result import LotteryResult
 
 
 class MyCommunity(Community, PeerObserver):
@@ -26,13 +26,19 @@ class MyCommunity(Community, PeerObserver):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
+        # Connected Peers
         self._connected_peers = set()
+        self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
+
+        # Connections
         self.tx_mempool = Mempool()
         self.chain = BlockChain(chain=[], round=1)
         self.chain_manager = BlockChainManager(chain=self.chain)
 
-        self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
+        # Broadcast
+        self.is_lottery_broadcaster = False
 
+        # Tasks
         self.register_task("ensure_full_connectivity",
                            self.ensure_full_connectivity, interval=10.0, delay=3.0)
         self.register_task('request_transactions',
@@ -45,16 +51,24 @@ class MyCommunity(Community, PeerObserver):
                            self.chain_manager.create_block,
                            interval=10.0, delay=5.0)
 
+        self.register_task('select_lottery_broadcaster',
+                           self.select_lottery_broadcaster,
+                           interval=20,
+                           delay=10.0  # Stagger the selection slightly
+                           )
+
         self.register_task('broadcast_lottery',
-                           self.chain_manager.broadcast_lottery_result,
-                           interval=20.0
+                           self.broadcast_lottery,
+                           interval=20.0,
 
                            )
 
+        # Message Handlers
         self.add_message_handler(
             TransactionsRequest, self.on_get_transactions_request)
         self.add_message_handler(TransactionsResponse,
                                  self.on_transactions_response)
+        self.add_message_handler(LotteryResult, self.on_lottery_result)
 
     # Peer Set up
     def on_peer_added(self, peer: Peer) -> None:
@@ -150,7 +164,8 @@ class MyCommunity(Community, PeerObserver):
     def on_get_transactions_request(self, peer: Peer, payload: TransactionsRequest):
         print(
             f"Received request for transactions since {payload.last_seen_timestamp} from {peer.address.port}")
-        latest_txs = self.get_latest_transactions(payload.last_seen_timestamp)
+        latest_txs = self.tx_mempool.get_latest_transactions(
+            payload.last_seen_timestamp)
         # Convert the list of transaction dictionaries to a JSON string
         self.ez_send(peer, TransactionsResponse(
             transactions=json.dumps([asdict(tx) for tx in latest_txs])))
@@ -177,12 +192,36 @@ class MyCommunity(Community, PeerObserver):
             print(
                 f"Error decoding transactions response from {peer.address.port}: {e}")
 
-    def get_latest_transactions(self, last_seen_timestamp: float) -> list[BetPayload]:
-        latest_txs = []
-        for tx in self.tx_mempool.get_all_transactions():
-            if tx.timestamp > last_seen_timestamp:
-                latest_txs.append(tx)
-        return latest_txs
+    async def broadcast_lottery(self):
+
+        if self.is_lottery_broadcaster:
+            lottery_result = self.chain_manager.get_winning_number()
+            if lottery_result is not None:
+                for peer in self.get_peers():
+                    self.ez_send(peer, LotteryResult(
+                        round=self.chain.round, winning_number=lottery_result))
+                self.is_lottery_broadcaster = False  # Reset after broadcasting
+
+    async def select_lottery_broadcaster(self):
+        all_peers = list(self.get_peers()) + [self.my_peer]
+        if all_peers:
+            sorted_peers = sorted(
+                all_peers, key=lambda p: p.public_key.key_to_bin().hex())
+            broadcaster = sorted_peers[0]
+            if broadcaster == self.my_peer:
+                self.is_lottery_broadcaster = True
+            else:
+                self.is_lottery_broadcaster = False
+            print(
+                f"{broadcaster.address.port} is the lottery broadcaster (lowest peer ID).")
+        else:
+            print("No peers available to select a lottery broadcaster.")
+            self.is_lottery_broadcaster = False
+
+    @lazy_wrapper(LotteryResult)
+    def on_lottery_result(self, peer: Peer, payload: LotteryResult):
+        print(
+            f"Received lottery result for round {payload.round} from {peer.address.port}: Winning number is {payload.winning_number}")
 
     def started(self) -> None:
         self.network.add_peer_observer(self)

@@ -78,13 +78,11 @@ class BlockChainManager():
 
         return True
 
-    def broadcast_lottery_result(self):
+    def get_winning_number(self):
         round_blocks = self.block_chain._get_blocks_for_round()
 
         winning_block = random.choice(round_blocks)
 
         winning_number = winning_block.winning_number
-        print(
-            f"Lottery result for round {self.block_chain.round}: Winning number is {winning_number} from Block #{winning_block.index}.")
 
-        return
+        return winning_number

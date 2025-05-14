@@ -44,5 +44,12 @@ class Mempool:
     def get_all_transactions(self) -> List[BetPayload]:
         return [BetPayload(**data) for data in self._mempool.values()]
 
+    def get_latest_transactions(self, last_seen_timestamp: float) -> list[BetPayload]:
+        latest_txs = []
+        for tx in self.get_all_transactions():
+            if tx.timestamp > last_seen_timestamp:
+                latest_txs.append(tx)
+        return latest_txs
+
     def clear_mempool(self):
         self._mempool.clear()
