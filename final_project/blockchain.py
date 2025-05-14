@@ -372,3 +372,45 @@ class LotteryBlockchain:
             int: The peer's balance
         """
         return self.balances.get(peer_id, 0)
+
+    def buy_ticket(self, peer_id: str, bet_number: int, bet_amount: int, signature: str = "") -> bool:
+        """
+        Buy a lottery ticket by creating a bet transaction
+        
+        Args:
+            peer_id: The ID of the user buying the ticket
+            bet_number: The lottery number to bet on (0-99)
+            bet_amount: The amount to bet
+            signature: Optional signature for the transaction
+            
+        Returns:
+            bool: True if the ticket was purchased successfully, False otherwise
+        """
+        # Initialize balance if not exists
+        # if peer_id not in self.balances:
+        #     self.balances[peer_id] = 100  # Give new users some initial balance
+
+        # Check if user has enough balance
+        current_balance = self.get_balance(peer_id)
+        if current_balance < bet_amount:
+            print(f"Insufficient balance: {current_balance} < {bet_amount}")
+            return False
+
+        # Create a new bet transaction
+        bet = BetPayload(
+            bettor_id=peer_id,
+            bet_number=bet_number,
+            bet_amount=bet_amount,
+            timestamp=time.time(),
+            signature=signature
+        )
+
+        # Validate and add the bet to mempool
+        if not self.add_bet_transaction(bet):
+            print(f"Failed to add bet transaction for {peer_id}")
+            return False
+
+        # Deduct the bet amount from user's balance
+        self.balances[peer_id] -= bet_amount
+        print(f"Ticket purchased: {peer_id} bet {bet_amount} on number {bet_number}")
+        return True
