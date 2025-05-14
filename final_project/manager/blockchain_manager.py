@@ -39,10 +39,6 @@ class BlockChainManager:
             self.db.save_block(genesis_block._to_dict())
 
     def create_block(self) -> Optional[Block]:
-        print(f"block creation every 10 sec from mempool {id(self.mempool)}")
-        print(
-            f"current mempool size: {len(self.mempool.get_all_transactions())} and id: {id(self.mempool)}"
-        )
         if not self.mempool:
 
             transactions = []
