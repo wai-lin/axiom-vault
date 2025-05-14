@@ -1,3 +1,4 @@
+from final_project.utils import calculate_block_hash
 from messages.blockchain import BlockChain
 from messages.block import Block
 
@@ -26,6 +27,7 @@ class BlockChainManager():
             validator=None,
             hash=None,
         )
+        calculate_block_hash(genesis_block)
 
         self.chain.chain.append(genesis_block)
         if self.db:
