@@ -12,8 +12,12 @@ from ipv8_service import IPv8
 from ipv8.lazy_community import lazy_wrapper
 
 from db.mempool import Mempool
+from manager.blockchain_manager import BlockChainManager
+
+
 from messages.betpayload import BetPayload
 from messages.transaction import TransactionsRequest, TransactionsResponse
+from messages.blockchain import BlockChain
 
 
 class MyCommunity(Community, PeerObserver):
@@ -24,12 +28,21 @@ class MyCommunity(Community, PeerObserver):
 
         self._connected_peers = set()
         self.tx_mempool = Mempool()
+        self.chain = BlockChain(chain=[])
+        self.chain_manager = BlockChainManager(chain=self.chain)
+
         self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
 
         self.register_task("ensure_full_connectivity",
                            self.ensure_full_connectivity, interval=10.0, delay=5.0)
         self.register_task('request_transactions',
                            self.request_transactions, interval=5.0, delay=2.0)
+        self.register_task('create_genesis_block',
+                           self.chain_manager.create_genesis_block,
+                           interval=2.0,
+                           delay=2.0
+
+                           )
 
         self.add_message_handler(
             TransactionsRequest, self.on_get_transactions_request)
@@ -139,7 +152,6 @@ class MyCommunity(Community, PeerObserver):
     def on_transactions_response(self, peer: Peer, payload: TransactionsResponse):
         print(f"Received transactions from {peer.address.port}")
         try:
-            # Deserialize the JSON string back into a list of transaction dictionaries
             transactions_data = json.loads(payload.transactions)
             for tx_data in transactions_data:
                 tx = BetPayload(**tx_data)

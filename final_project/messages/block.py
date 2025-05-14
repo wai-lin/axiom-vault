@@ -16,8 +16,9 @@ class Block:
     winning_number: int
     commit_reveals: bytes
     validator: str
+    hash: str
 
-    def calculate_hash(self) -> str:
+    def _calculate_hash(self) -> str:
         block_string = json.dumps(
             {
                 "index": self.index,
@@ -30,7 +31,9 @@ class Block:
             },
             sort_keys=True,
         ).encode()
-        return hashlib.sha256(block_string).hexdigest()
+        hash_string = hashlib.sha256(block_string).hexdigest()
+        self.hash = hash_string
+        return hash_string
 
     def to_dict(self):
         return {

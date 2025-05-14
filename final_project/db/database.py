@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 from dataclasses import asdict
-from mempool import Mempool
+from db.mempool import Mempool
 from messages.betpayload import BetPayload
 
 
