@@ -10,9 +10,13 @@ import hashlib
 import json
 
 
+BLOCKS_PER_ROUND = 12
+
+
 @dataclass(msg_id=4)
 class BlockChain:
     chain: list[Block]
+    round: int
 
     def _get_latest_block(self) -> Block:
         return self.chain[-1]
@@ -30,3 +34,8 @@ class BlockChain:
             return False
 
         return True
+
+    def _get_blocks_for_round(self) -> list[Block]:
+        start_index = (self.round - 1) * BLOCKS_PER_ROUND
+        end_index = start_index + BLOCKS_PER_ROUND
+        return self.chain[start_index:end_index]

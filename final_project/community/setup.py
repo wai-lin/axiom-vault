@@ -28,19 +28,26 @@ class MyCommunity(Community, PeerObserver):
 
         self._connected_peers = set()
         self.tx_mempool = Mempool()
-        self.chain = BlockChain(chain=[])
+        self.chain = BlockChain(chain=[], round=1)
         self.chain_manager = BlockChainManager(chain=self.chain)
 
         self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
 
         self.register_task("ensure_full_connectivity",
-                           self.ensure_full_connectivity, interval=10.0, delay=5.0)
+                           self.ensure_full_connectivity, interval=10.0, delay=3.0)
         self.register_task('request_transactions',
-                           self.request_transactions, interval=5.0, delay=2.0)
+                           self.request_transactions, interval=5.0, delay=1.0)
+
         self.register_task('create_genesis_block',
-                           self.chain_manager.create_genesis_block,
-                           interval=2.0,
-                           delay=2.0
+                           self.chain_manager.create_genesis_block)
+
+        self.register_task('create_block',
+                           self.chain_manager.create_block,
+                           interval=10.0, delay=5.0)
+
+        self.register_task('broadcast_lottery',
+                           self.chain_manager.broadcast_lottery_result,
+                           interval=20.0
 
                            )
 
@@ -105,7 +112,7 @@ class MyCommunity(Community, PeerObserver):
 
     # Removed the dual-purpose request, now a dedicated request
     async def request_transactions(self):
-        print("Requesting latest transactions from peers...")
+        # print("Requesting latest transactions from peers...")
         for peer in self.get_peers():
             peer_id_hex = peer.public_key.key_to_bin().hex()
             last_seen = self.latest_tx_timestamps.get(peer_id_hex, 0.0)
@@ -172,7 +179,7 @@ class MyCommunity(Community, PeerObserver):
 
     def get_latest_transactions(self, last_seen_timestamp: float) -> list[BetPayload]:
         latest_txs = []
-        for tx in self.tx_mempool.get_all_transaction():
+        for tx in self.tx_mempool.get_all_transactions():
             if tx.timestamp > last_seen_timestamp:
                 latest_txs.append(tx)
         return latest_txs
