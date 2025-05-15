@@ -1,33 +1,51 @@
-import hashlib
+from messages.block import Block
 import time
+import hashlib
+
+TARGET_BLOCK_TIME = 20  # seconds
 
 
 class Miner:
-    TARGET_BLOCK_TIME = 20  # Seconds
-    INITIAL_DIFFICULTY = 4
 
-    def __init__(self):
-        self.difficulty = self.INITIAL_DIFFICULTY
+    def mine_block(self, block):
+        print("Mining Block")
 
-    def proof_of_work(self, block):
+        nonce, difficulty = self._calculate_nonce(block)
+
+        # Mutate block
+        block.nonce = nonce
+        block.difficulty = difficulty  # Assign the updated difficulty
+
+        hash_string = block._calculate_hash_string(nonce)
+        block_hash = hashlib.sha256(hash_string.encode()).hexdigest()
+
+        block.hash = block_hash
+        print("Block Has Been Mined")
+        return block
+
+    def _calculate_nonce(self, block):
         nonce = 0
         start_time = time.time()
-        block_data = self._block_string(block, nonce)
 
         while True:
+            block_data = block._calculate_hash_string(nonce)
             block_hash = hashlib.sha256(block_data.encode()).hexdigest()
-            if block_hash.startswith('0' * self.difficulty):
+            print("Trying Nonce :", nonce)
+            print("Hash :", block_hash)
+            if block_hash.startswith('0' * block.difficulty):
+
                 elapsed = time.time() - start_time
-                return block_hash, nonce, elapsed
+                difficulty = self._adjust_difficulty(elapsed, block.difficulty)
+                return nonce, difficulty
             nonce += 1
-            block_data = self._block_string(block, nonce)
 
-    def adjust_difficulty(self, elapsed_time):
-        if elapsed_time < self.TARGET_BLOCK_TIME:
-            self.difficulty += 1
-        elif elapsed_time > self.TARGET_BLOCK_TIME:
-            self.difficulty = max(1, self.difficulty - 1)
+    def _adjust_difficulty(self, elapsed_time, difficulty):
 
-    def _block_string(self, block, nonce):
-        data = f"{block.index}{block.timestamp}{block.transactions}{block.previous_hash}{block.winning_number}{nonce}"
-        return data
+        # Soft Capping For Now ( Cuz I don't want to deal with Float Shit, or Large Integer)
+        return 1
+
+        if elapsed_time < TARGET_BLOCK_TIME:
+            return difficulty + 1
+        elif elapsed_time > TARGET_BLOCK_TIME * 2 and difficulty > 1:
+            return difficulty - 1
+        return difficulty

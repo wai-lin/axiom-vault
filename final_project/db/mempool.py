@@ -31,13 +31,16 @@ class Mempool:
             return BetPayload(**tx_data)
         return None
 
-    def remove_transaction(self, txid: str) -> bool:
+    def remove_single_transaction(self, txid: str) -> bool:
         if txid in self._mempool:
             del self._mempool[txid]
             print(f"Transaction {txid} removed from mempool.")
-            return True
         print(f"Transaction {txid} not found in mempool.")
-        return False
+
+    def remove_transactions(self, transactions: BetPayload):
+        txn_list = [tx._generate_txid() for tx in transactions]
+        for txn in txn_list:
+            self.remove_single_transaction(txn)
 
     def get_all_transactions(self) -> List[BetPayload]:
         return [BetPayload(**data) for data in self._mempool.values()]
@@ -50,4 +53,4 @@ class Mempool:
         return latest_txs
 
     def clear_mempool(self):
-        self._mempool.clear()
+        self._mempool = {}

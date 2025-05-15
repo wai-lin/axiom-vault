@@ -5,3 +5,4 @@ from ipv8.messaging.payload_dataclass import dataclass
 class LotteryResult:
     round: int
     winning_number: int
+    total_amount: int
