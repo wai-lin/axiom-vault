@@ -2,6 +2,7 @@ import random
 import time
 from dataclasses import asdict
 import json
+import os
 
 
 from ipv8.community import Community
@@ -18,17 +19,20 @@ from messages.betpayload import BetPayload
 from messages.transaction import TransactionsRequest, TransactionsResponse
 from messages.block import Block
 from messages.result import LotteryResult
+from utils.discovery_log import WalkLogger
 
 
 class MyCommunity(Community, PeerObserver):
-    community_id = b'harbourspaceuniverse'
+    community_id = b"harbourspaceuniverse"
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, settings) -> None:
+        super().__init__(settings)
 
         # Connected Peers
         self._connected_peers = set()
-        self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
+        self.latest_tx_timestamps = (
+            {}
+        )  # Track the latest timestamp received from each peer
         self._known_peers = set()  # Keep track of all discovered peers
 
         # Connections
@@ -46,6 +50,10 @@ class MyCommunity(Community, PeerObserver):
 
         # Broadcast
         self.is_lottery_broadcaster = False
+
+        # utils
+        self.node_id = settings.node_id
+        self.walk_logger = WalkLogger(self.node_id)
 
         # Tasks
         self.register_task("ensure_full_connectivity",
@@ -87,6 +95,7 @@ class MyCommunity(Community, PeerObserver):
     def on_peer_added(self, peer: Peer) -> None:
         # print("I am:", self.my_peer, "I found:", peer)
         self.walk_to(peer.address)
+        self.walk_logger.update(self.my_peer.mid.hex(), peer.mid.hex())
         self._connected_peers.add(peer)
         # Track discovered peers
         self._known_peers.add(peer.public_key.key_to_bin().hex())
@@ -124,6 +133,7 @@ class MyCommunity(Community, PeerObserver):
         else:
             pass
 
+    # TODO: is this method necessary?
     async def ensure_full_connectivity(self):
         current_time = time.time()
         elapsed_time = current_time - self.establishment_start_time
@@ -169,7 +179,7 @@ class MyCommunity(Community, PeerObserver):
             "bettor_id": bettor_id,
             "bet_number": bet_number,
             "bet_amount": bet_amount,
-            "timestamp": timestamp
+            "timestamp": timestamp,
         }
 
         signature = self.crypto.create_signature(
@@ -214,12 +224,16 @@ class MyCommunity(Community, PeerObserver):
                 #     f"Received and added valid transaction {txid} from {peer.address.port}")
                 peer_id_hex = peer.public_key.key_to_bin().hex()
                 self.latest_tx_timestamps[peer_id_hex] = max(
-                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp)
+                    self.latest_tx_timestamps.get(
+                        peer_id_hex, 0.0), payload.timestamp
+                )
             else:
                 # Optionally update timestamp even if transaction exists
                 peer_id_hex = peer.public_key.key_to_bin().hex()
                 self.latest_tx_timestamps[peer_id_hex] = max(
-                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp)
+                    self.latest_tx_timestamps.get(
+                        peer_id_hex, 0.0), payload.timestamp
+                )
         else:
             # print(f"Received invalid transaction from {peer.address.port}")
             pass
@@ -228,10 +242,15 @@ class MyCommunity(Community, PeerObserver):
     def on_get_transactions_request(self, peer: Peer, payload: TransactionsRequest):
         # print(f"Received request for transactions since {payload.last_seen_timestamp} from {peer.address.port}")
         latest_txs = self.tx_mempool.get_latest_transactions(
-            payload.last_seen_timestamp)
+            payload.last_seen_timestamp
+        )
         # Convert the list of transaction dictionaries to a JSON string
-        self.ez_send(peer, TransactionsResponse(
-            transactions=json.dumps([asdict(tx) for tx in latest_txs])))
+        self.ez_send(
+            peer,
+            TransactionsResponse(
+                transactions=json.dumps([asdict(tx) for tx in latest_txs])
+            ),
+        )
 
     @lazy_wrapper(TransactionsResponse)
     def on_transactions_response(self, peer: Peer, payload: TransactionsResponse):
@@ -247,11 +266,15 @@ class MyCommunity(Community, PeerObserver):
                     # print(f"Added received transaction: {txid}")
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
-                        self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp)
+                        self.latest_tx_timestamps.get(
+                            peer_id_hex, 0.0), tx.timestamp
+                    )
                 else:
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
-                        self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp)
+                        self.latest_tx_timestamps.get(
+                            peer_id_hex, 0.0), tx.timestamp
+                    )
         except json.JSONDecodeError as e:
             # print(f"Error decoding transactions response from {peer.address.port}: {e}")
             pass
@@ -287,7 +310,8 @@ class MyCommunity(Community, PeerObserver):
         all_peers = list(self.get_peers()) + [self.my_peer]
         if all_peers:
             sorted_peers = sorted(
-                all_peers, key=lambda p: p.public_key.key_to_bin().hex())
+                all_peers, key=lambda p: p.public_key.key_to_bin().hex()
+            )
             broadcaster = sorted_peers[0]
             if broadcaster == self.my_peer:
                 self.is_lottery_broadcaster = True
@@ -295,7 +319,6 @@ class MyCommunity(Community, PeerObserver):
                     f"{broadcaster.address.port} is the lottery broadcaster (lowest peer ID).")
             else:
                 self.is_lottery_broadcaster = False
-
         else:
             print("No peers available to select a lottery broadcaster.")
             self.is_lottery_broadcaster = False
