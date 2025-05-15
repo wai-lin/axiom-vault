@@ -7,3 +7,8 @@ database.json
 note.txt
 *.png
 .ignore
+data
+*.json
+*.gif
+*.csv
+/round_reports
