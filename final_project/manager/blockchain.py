@@ -1,16 +1,21 @@
 from messages.block import Block
-
+from pow.miner import Miner
 
 from db.mempool import Mempool
 from db.database import Database
 
+
 import time
 import random
-
+import math
+import hashlib
 
 from typing import Optional, Dict
+from dataclasses import asdict
+
 
 BLOCKS_PER_ROUND = 12
+DEFAULT_DIFFICULTY = 1
 
 
 class BlockChain():
@@ -28,15 +33,15 @@ class BlockChain():
         self._initialized = True
 
         self.chain = []
-        self.round = 1
         self.mempool = Mempool()
         self.db = Database()
-
-        # Implement PoW
-        # self.miner = Miner()
+        self.miner = Miner()
 
     def _get_latest_block(self) -> Block:
         return self.chain[-1]
+
+    def _get_length(self) -> int:
+        return len(self.chain)
 
     def _validate_transaction(self, transaction: Dict) -> bool:
         required_fields = ["sender", "bet_number",
@@ -52,26 +57,39 @@ class BlockChain():
 
         return True
 
+    def _get_round_number(self) -> int:
+        return int(math.ceil(len(self.chain) / BLOCKS_PER_ROUND))
+
     def _get_blocks_for_round(self) -> list[Block]:
-        start_index = (self.round - 1) * BLOCKS_PER_ROUND
+        round = self._get_round_number()
+        start_index = (round - 1) * BLOCKS_PER_ROUND
         end_index = start_index + BLOCKS_PER_ROUND
         return self.chain[start_index:end_index]
 
-    def create_genesis_block(self) -> None:
+    def _add_block(self, block: Block):
+        self.chain.append(block)
+        if self.db:
+            self.db.save_block(block._to_dict())
+
+    def create_genesis_block(self) -> Block:
         genesis_block = Block(
             index=0,
             timestamp=time.time(),
             transactions=[],
             previous_hash="0",
             winning_number=random.randint(1, 100),
-            hash=None,
+            hash='genesis_hash',
+            nonce=None,
+            difficulty=DEFAULT_DIFFICULTY,
         )
 
-        genesis_block._calculate_block_hash()
+        self.miner.mine_block(genesis_block)
 
         self.chain.append(genesis_block)
         if self.db:
             self.db.save_block(genesis_block._to_dict())
+
+        return genesis_block
 
     def create_block(
         self
@@ -90,6 +108,8 @@ class BlockChain():
             previous_hash=self._get_latest_block().hash,
             winning_number=random.randint(1, 100),
             hash=None,
+            nonce=None,
+            difficulty=1.0,
         )._calculate_block_hash()
 
         self.chain.append(new_block)
@@ -98,18 +118,16 @@ class BlockChain():
 
         return new_block
 
-    def validate_chain(self):
-        for i in range(1, self._get_latest_block):
-            current = self.chain[i]
-            previous = self.chain[i - 1]
+    def validate_block(self, block: Block) -> bool:
+        calculated_hash = hashlib.sha256(
+            block._calculate_hash_string(block.nonce).encode()
+        ).hexdigest()
 
-            # Check hash integrity
-            if current.previous_hash != previous.hash:
-                return False
-
-            # Check block hash
-            if current.hash != current.calculate_hash():
-                return False
+        if calculated_hash != block.hash:
+            print(
+                f"Block hash invalid. Calculated: {calculated_hash}, Received: {block.hash}"
+            )
+            return False
 
         return True
 

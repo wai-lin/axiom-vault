@@ -14,31 +14,10 @@ class Block:
     timestamp: float
     transactions: list[BetPayload]
     previous_hash: str
-    winning_number: int
     hash: str
-
-    def _calculate_block_hash(self):
-        try:
-            block_data = {
-                "index": self.index,
-                "timestamp": self.timestamp,
-                "transactions": [asdict(payload) for payload in self.transactions],
-                "previous_hash": self.previous_hash,
-                "winning_number": self.winning_number,
-            }
-            block_string = json.dumps(block_data, sort_keys=True).encode()
-            hash_string = hashlib.sha256(block_string).hexdigest()
-            self.hash = hash_string
-        except TypeError as e:
-            print(
-                f"TypeError encountered while calculating hash for block {self.index}: {e}")
-            print(f"Block data: {block_data}")
-        except Exception as e:
-            print(
-                f"An unexpected error occurred while calculating hash for block {self.index}: {e}")
-            print(f"Block data: {block_data}")
-
-        return self
+    winning_number: int
+    nonce: int
+    difficulty: int  # Default is 1
 
     def _to_dict(self):
         return {
@@ -48,4 +27,19 @@ class Block:
             "previous_hash": self.previous_hash,
             "winning_number": self.winning_number,
             "hash": self.hash,
+            "difficulty": self.difficulty,
+            "nonce": self.nonce
         }
+
+    def _calculate_hash_string(self, nonce) -> str:
+        block_data = {
+            "index": self.index,
+            "timestamp": self.timestamp,
+            "transactions": tuple(sorted([tuple(sorted(item.items())) for item in self.transactions])),
+            "previous_hash": self.previous_hash,
+            "winning_number": self.winning_number,
+            "difficulty": self.difficulty,
+            "nonce": nonce,
+        }
+        block_string = json.dumps(block_data, sort_keys=True)
+        return block_string

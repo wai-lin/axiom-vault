@@ -16,6 +16,7 @@ from manager.blockchain import BlockChain
 
 from messages.betpayload import BetPayload
 from messages.transaction import TransactionsRequest, TransactionsResponse
+from messages.block import Block
 from messages.result import LotteryResult
 
 
@@ -28,26 +29,30 @@ class MyCommunity(Community, PeerObserver):
         # Connected Peers
         self._connected_peers = set()
         self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
+        self._known_peers = set()  # Keep track of all discovered peers
 
         # Connections
         self.tx_mempool = Mempool()
         self.chain = BlockChain()
+
+        # Mining
+        self.is_miner = False
+
+        # Network Establishment
+        self.network_established = False
+        # Time to wait for peers (adjust as needed)
+        self.establishment_timeout = 10.0
+        self.establishment_start_time = time.time()
 
         # Broadcast
         self.is_lottery_broadcaster = False
 
         # Tasks
         self.register_task("ensure_full_connectivity",
-                           self.ensure_full_connectivity, interval=10.0, delay=3.0)
+                           self.ensure_full_connectivity, interval=5.0, delay=3.0)
+
         self.register_task('request_transactions',
                            self.request_transactions, interval=5.0, delay=1.0)
-
-        self.register_task('create_genesis_block',
-                           self.chain.create_genesis_block)
-
-        self.register_task('create_block',
-                           self.chain.create_block,
-                           interval=10.0, delay=5.0)
 
         self.register_task('select_lottery_broadcaster',
                            self.select_lottery_broadcaster,
@@ -60,20 +65,34 @@ class MyCommunity(Community, PeerObserver):
                            interval=60.0,
                            )
 
-        # Message Handlers
+        # For Block messages
+        self.add_message_handler(Block, self.on_block)
+
+        # For Syncing Mempools
         self.add_message_handler(
             TransactionsRequest, self.on_get_transactions_request)
         self.add_message_handler(TransactionsResponse,
                                  self.on_transactions_response)
+
+        # For Betpayload
+        self.add_message_handler(BetPayload, self.on_transaction_message)
+
+        # For Lottery
         self.add_message_handler(LotteryResult, self.on_lottery_result)
+
+        # Task to generate transactions, will be started conditionally
+        self.generate_tx_task = None
 
     # Peer Set up
     def on_peer_added(self, peer: Peer) -> None:
         # print("I am:", self.my_peer, "I found:", peer)
         self.walk_to(peer.address)
         self._connected_peers.add(peer)
+        # Track discovered peers
+        self._known_peers.add(peer.public_key.key_to_bin().hex())
         # Initialize timestamp
         self.latest_tx_timestamps[peer.public_key.key_to_bin().hex()] = 0.0
+        self._determine_miner()
 
     def on_peer_removed(self, peer: Peer) -> None:
         peer_id = peer.public_key.key_to_bin().hex()
@@ -81,16 +100,62 @@ class MyCommunity(Community, PeerObserver):
             self._connected_peers.remove(peer)
         if peer_id in self.latest_tx_timestamps:
             del self.latest_tx_timestamps[peer_id]
+        if peer_id in self._known_peers:
+            self._known_peers.remove(peer_id)
+        self._determine_miner()
+
+    def _determine_miner(self):
+        """Selects the miner based on the highest peer ID among connected peers."""
+        all_peers = list(self._connected_peers) + [self.my_peer]
+        if all_peers:
+            sorted_peers = sorted(
+                all_peers, key=lambda p: p.public_key.key_to_bin().hex(), reverse=True)
+            potential_miner = sorted_peers[0]
+            if potential_miner == self.my_peer:
+                if not self.is_miner:
+                    self.is_miner = True
+                    print(
+                        f"{self.my_peer.address.port} is now the miner (highest peer ID).")
+
+            else:
+                if self.is_miner:
+                    self.is_miner = False
+                    print(f"{self.my_peer.address.port} is no longer the miner.")
+        else:
+            pass
 
     async def ensure_full_connectivity(self):
-        connected_peers = set(self.network.verified_peers)
-        for peer in connected_peers:
-            peer_id = peer.public_key.key_to_bin().hex()
-            if peer not in self._connected_peers:
-                self._connected_peers.add(peer)
-                self.walk_to(peer.address)
-                self.latest_tx_timestamps[peer_id] = 0.0
-                # print(f"Connecting to previously discovered peer: {peer}")
+        current_time = time.time()
+        elapsed_time = current_time - self.establishment_start_time
+        num_connected = len(self._connected_peers)
+
+        # Define your criteria for "full establishment" here.
+        # For example, wait for a certain number of peers or a timeout.
+        if elapsed_time > self.establishment_timeout and num_connected > 0 and not self.network_established:
+            self.network_established = True
+            print(f"{self.my_peer.address.port}:  Network considered established.")
+
+            if self.is_miner and self.chain._get_length() == 0:
+                genesis_block = self.chain.create_genesis_block()
+                self.broadcast_block(genesis_block)
+
+            # Start generating transactions now that the network is established
+            if self.generate_tx_task is None:
+                pass
+                # self.generate_tx_task = self.register_task(
+                #     'generate_transaction', self.generate_transaction, interval=2.0, delay=2
+                # )
+        elif not self.network_established:
+            connected_peers = set(self.network.verified_peers)
+            for peer in connected_peers:
+                peer_id = peer.public_key.key_to_bin().hex()
+                if peer not in self._connected_peers:
+                    self._connected_peers.add(peer)
+                    self._known_peers.add(peer_id)
+                    self.walk_to(peer.address)
+                    self.latest_tx_timestamps[peer_id] = 0.0
+                    # print(f"Connecting to previously discovered peer: {peer}")
+            self._determine_miner()  # Re-evaluate miner after new connections
 
     # Generate Transaction (remains the same, won't be proactively sent)
     async def generate_transaction(self) -> None:
@@ -145,7 +210,8 @@ class MyCommunity(Community, PeerObserver):
             if not self.tx_mempool.get_transaction(txid):
                 self.tx_mempool.add_transaction(
                     payload._generate_txid(), payload)
-                # print(f"Received and added valid transaction {txid} from {peer.address.port}")
+                # print(
+                #     f"Received and added valid transaction {txid} from {peer.address.port}")
                 peer_id_hex = peer.public_key.key_to_bin().hex()
                 self.latest_tx_timestamps[peer_id_hex] = max(
                     self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp)
@@ -190,14 +256,28 @@ class MyCommunity(Community, PeerObserver):
             # print(f"Error decoding transactions response from {peer.address.port}: {e}")
             pass
 
-    async def broadcast_lottery(self):
+    def broadcast_block(self, block: Block):
+        for peer in self.get_peers():
+            self.ez_send(peer, block)
+        print(f"{self.my_peer.address.port}: Genesis block broadcasted.")
 
+    @lazy_wrapper(Block)
+    def on_block(self, peer: Peer, payload: Block):
+        print(
+            f"{self.my_peer.address.port}: Received block from {peer.address.port}: {payload.index}")
+        if self.chain._get_length() == 0:  # Only add if we don't have a chain yet
+            self.chain.validate_block(payload)
+            self.chain._add_block(payload)  # Assuming Validation is True
+
+    # Lottery
+
+    async def broadcast_lottery(self):
         if self.is_lottery_broadcaster:
             lottery_result, total_amount, winner_list = self.chain.get_winning_result()
             if lottery_result is not None:
                 for peer in self.get_peers():
                     self.ez_send(peer, LotteryResult(
-                        round=self.chain.round,
+                        round=self.chain._get_round_number(),
                         winning_number=lottery_result,
                         total_amount=total_amount
                     ))
@@ -211,10 +291,11 @@ class MyCommunity(Community, PeerObserver):
             broadcaster = sorted_peers[0]
             if broadcaster == self.my_peer:
                 self.is_lottery_broadcaster = True
+                print(
+                    f"{broadcaster.address.port} is the lottery broadcaster (lowest peer ID).")
             else:
                 self.is_lottery_broadcaster = False
-            print(
-                f"{broadcaster.address.port} is the lottery broadcaster (lowest peer ID).")
+
         else:
             print("No peers available to select a lottery broadcaster.")
             self.is_lottery_broadcaster = False
@@ -227,7 +308,6 @@ class MyCommunity(Community, PeerObserver):
 
     def started(self) -> None:
         self.network.add_peer_observer(self)
-        self.add_message_handler(BetPayload, self.on_transaction_message)
 
-        self.register_task('generate_transaction',
-                           self.generate_transaction, interval=2.0, delay=0)
+        # Do not register generate_transaction here initially
+        pass
