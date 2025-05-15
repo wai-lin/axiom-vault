@@ -20,6 +20,7 @@ from messages.transaction import TransactionsRequest, TransactionsResponse
 from messages.blockchain import BlockChain
 from messages.result import LotteryResult
 from utils.discovery_log import WalkLogger
+from utils.transaction_log import TxCoverageTracker
 
 
 class MyCommunity(Community, PeerObserver):
@@ -45,14 +46,10 @@ class MyCommunity(Community, PeerObserver):
         # utils
         self.node_id = settings.node_id
         self.walk_logger = WalkLogger(self.node_id)
+        self.tx_tracker = TxCoverageTracker(self.node_id)
+        self.round = 1  # TODO: edit after block has round id
 
         # Tasks
-        self.register_task(
-            "ensure_full_connectivity",
-            self.ensure_full_connectivity,
-            interval=10.0,
-            delay=3.0,
-        )
         self.register_task(
             "request_transactions", self.request_transactions, interval=5.0, delay=5.0
         )
@@ -89,7 +86,6 @@ class MyCommunity(Community, PeerObserver):
         self.walk_to(peer.address)
         self.walk_logger.update(self.my_peer.mid.hex(), peer.mid.hex())
         self._connected_peers.add(peer)
-        # Initialize timestamp
         self.latest_tx_timestamps[peer.public_key.key_to_bin().hex()] = 0.0
 
     def on_peer_removed(self, peer: Peer) -> None:
@@ -98,18 +94,6 @@ class MyCommunity(Community, PeerObserver):
             self._connected_peers.remove(peer)
         if peer_id in self.latest_tx_timestamps:
             del self.latest_tx_timestamps[peer_id]
-
-    # TODO: is this method necessary?
-    async def ensure_full_connectivity(self):
-        connected_peers = set(self.network.verified_peers)
-        for peer in connected_peers:
-            if peer not in self._connected_peers:
-                peer_id = peer.public_key.key_to_bin().hex()
-                self._connected_peers.add(peer)
-                self.walk_to(peer.address)
-                self.walk_logger.update(self.my_peer.mid.hex(), peer.mid.hex())
-                self.latest_tx_timestamps[peer_id] = 0.0
-                print(f"Connecting to previously discovered peer: {peer}")
 
     # Generate Transaction (remains the same, won't be proactively sent)
     async def generate_transaction(self) -> None:
@@ -136,8 +120,10 @@ class MyCommunity(Community, PeerObserver):
             signature=signature.hex(),
         )
 
-        self.tx_mempool.add_transaction(payload._generate_txid(), payload)
-        print(f"Generated and stored transaction: {payload._generate_txid()}")
+        tx_id = payload._generate_txid()
+        self.tx_mempool.add_transaction(tx_id, payload)
+        self.tx_tracker.record(self.round, tx_id, payload.timestamp)
+        print(f"Generated and stored transaction: {tx_id}")
 
     # Removed the dual-purpose request, now a dedicated request
     async def request_transactions(self):
@@ -146,36 +132,6 @@ class MyCommunity(Community, PeerObserver):
             peer_id_hex = peer.public_key.key_to_bin().hex()
             last_seen = self.latest_tx_timestamps.get(peer_id_hex, 0.0)
             self.ez_send(peer, TransactionsRequest(last_seen_timestamp=last_seen))
-
-    @lazy_wrapper(BetPayload)
-    def on_transaction_message(self, peer: Peer, payload: BetPayload):
-        # This handler is now solely for processing incoming transactions
-        public_key = self.crypto.key_from_public_bin(bytes.fromhex(payload.bettor_id))
-
-        enocde_byte = str(payload).encode()
-
-        signature_bytes = bytes.fromhex(payload.signature)
-
-        if self.crypto.is_valid_signature(public_key, enocde_byte, signature_bytes):
-            txid = payload._generate_txid()
-            if not self.tx_mempool.get_transaction(txid):
-                self.tx_mempool.add_transaction(payload._generate_txid(), payload)
-
-                print(
-                    f"Received and added valid transaction {txid} from {peer.address.port}"
-                )
-                peer_id_hex = peer.public_key.key_to_bin().hex()
-                self.latest_tx_timestamps[peer_id_hex] = max(
-                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp
-                )
-            else:
-                # Optionally update timestamp even if transaction exists
-                peer_id_hex = peer.public_key.key_to_bin().hex()
-                self.latest_tx_timestamps[peer_id_hex] = max(
-                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp
-                )
-        else:
-            print(f"Received invalid transaction from {peer.address.port}")
 
     @lazy_wrapper(TransactionsRequest)
     def on_get_transactions_request(self, peer: Peer, payload: TransactionsRequest):
@@ -201,22 +157,20 @@ class MyCommunity(Community, PeerObserver):
             for tx_data in transactions_data:
                 tx = BetPayload(**tx_data)
                 txid = tx._generate_txid()
-                if not self.tx_mempool.get_transaction(txid):
-                    self.tx_mempool.add_transaction(tx._generate_txid(), tx)
+                self.tx_tracker.record(self.round, txid, tx.timestamp)
+                if self.tx_mempool.add_transaction(tx._generate_txid(), tx):
                     print(f"Added received transaction: {txid}")
-                    peer_id_hex = peer.public_key.key_to_bin().hex()
-                    self.latest_tx_timestamps[peer_id_hex] = max(
-                        self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp
-                    )
-                else:
-                    peer_id_hex = peer.public_key.key_to_bin().hex()
-                    self.latest_tx_timestamps[peer_id_hex] = max(
-                        self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp
-                    )
+                peer_id_hex = peer.public_key.key_to_bin().hex()
+                self.latest_tx_timestamps[peer_id_hex] = max(
+                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp
+                )
         except json.JSONDecodeError as e:
             print(f"Error decoding transactions response from {peer.address.port}: {e}")
 
     async def broadcast_lottery(self):
+        self.tx_tracker.flush(self.round)
+        self.tx_tracker.dump()
+        self.round += 1  # TODO: remove round when block has round
 
         if self.is_lottery_broadcaster:
             lottery_result = self.chain_manager.get_winning_number()
@@ -256,8 +210,7 @@ class MyCommunity(Community, PeerObserver):
 
     def started(self) -> None:
         self.network.add_peer_observer(self)
-        self.add_message_handler(BetPayload, self.on_transaction_message)
 
         self.register_task(
-            "generate_transaction", self.generate_transaction, interval=2.0, delay=0
+            "generate_transaction", self.generate_transaction, interval=4.0, delay=0
         )

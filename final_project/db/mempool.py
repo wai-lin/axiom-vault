@@ -21,10 +21,8 @@ class Mempool:
 
     def add_transaction(self, txid: str, payload: BetPayload) -> bool:
         if txid in self._mempool:
-            print(f"Transaction with TXID {txid} already in mempool.")
             return False
         self._mempool[txid] = asdict(payload)
-        print(f"Transaction {txid} added to mempool.")
         return True
 
     def get_transaction(self, txid: str) -> Optional[BetPayload]:
