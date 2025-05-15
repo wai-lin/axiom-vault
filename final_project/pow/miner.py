@@ -40,6 +40,13 @@ class Miner:
             nonce += 1
 
     def _adjust_difficulty(self, elapsed_time, difficulty):
+<<<<<<< HEAD
+=======
+
+        # Soft Capping For Now ( Cuz I don't want to deal with Float Shit, or Large Integer)
+        return 1
+
+>>>>>>> e5fed4b (Update: Block Syncing)
         if elapsed_time < TARGET_BLOCK_TIME:
             return difficulty + 1
         elif elapsed_time > TARGET_BLOCK_TIME * 2 and difficulty > 1:

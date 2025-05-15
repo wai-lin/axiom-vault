@@ -70,6 +70,10 @@ class BlockChain():
         self.chain.append(block)
         if self.db:
             self.db.save_block(block._to_dict())
+<<<<<<< HEAD
+=======
+        return True
+>>>>>>> e5fed4b (Update: Block Syncing)
 
     def create_genesis_block(self) -> Block:
         genesis_block = Block(
@@ -109,8 +113,15 @@ class BlockChain():
             winning_number=random.randint(1, 100),
             hash=None,
             nonce=None,
+<<<<<<< HEAD
             difficulty=1.0,
         )._calculate_block_hash()
+=======
+            difficulty=self._get_latest_block().difficulty,
+        )
+
+        self.miner.mine_block(new_block)
+>>>>>>> e5fed4b (Update: Block Syncing)
 
         self.chain.append(new_block)
         if self.db:

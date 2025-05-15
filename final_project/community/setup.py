@@ -2,7 +2,6 @@ import random
 import time
 from dataclasses import asdict
 import json
-import os
 
 
 from ipv8.community import Community
@@ -19,20 +18,19 @@ from messages.betpayload import BetPayload
 from messages.transaction import TransactionsRequest, TransactionsResponse
 from messages.block import Block
 from messages.result import LotteryResult
+
 from utils.discovery_log import WalkLogger
 
 
 class MyCommunity(Community, PeerObserver):
-    community_id = b"harbourspaceuniverse"
+    community_id = b'hcustomspaceuniverse'
 
     def __init__(self, settings) -> None:
         super().__init__(settings)
 
         # Connected Peers
         self._connected_peers = set()
-        self.latest_tx_timestamps = (
-            {}
-        )  # Track the latest timestamp received from each peer
+        self.latest_tx_timestamps = {}  # Track the latest timestamp received from each peer
         self._known_peers = set()  # Keep track of all discovered peers
 
         # Connections
@@ -41,6 +39,8 @@ class MyCommunity(Community, PeerObserver):
 
         # Mining
         self.is_miner = False
+        self.can_mine = False  # Flag to control when mining is allowed
+        self.mining_task_name = 'mine_and_broadcast'  # Track the mining task name
 
         # Network Establishment
         self.network_established = False
@@ -51,7 +51,7 @@ class MyCommunity(Community, PeerObserver):
         # Broadcast
         self.is_lottery_broadcaster = False
 
-        # utils
+        # Utils
         self.node_id = settings.node_id
         self.walk_logger = WalkLogger(self.node_id)
 
@@ -91,11 +91,18 @@ class MyCommunity(Community, PeerObserver):
         # Task to generate transactions, will be started conditionally
         self.generate_tx_task = None
 
+<<<<<<< HEAD
+=======
+        # Initial call to start the mining cycle if this node is the initial miner
+        self.mining_trigger_task = self.register_task(
+            'trigger_mining', self._trigger_mining, interval=15.0, delay=10.0
+        )
+
+>>>>>>> e5fed4b (Update: Block Syncing)
     # Peer Set up
     def on_peer_added(self, peer: Peer) -> None:
         # print("I am:", self.my_peer, "I found:", peer)
         self.walk_to(peer.address)
-        self.walk_logger.update(self.my_peer.mid.hex(), peer.mid.hex())
         self._connected_peers.add(peer)
         # Track discovered peers
         self._known_peers.add(peer.public_key.key_to_bin().hex())
@@ -123,17 +130,21 @@ class MyCommunity(Community, PeerObserver):
             if potential_miner == self.my_peer:
                 if not self.is_miner:
                     self.is_miner = True
+                    self.can_mine = True  # Allow mining when this node becomes the miner
                     print(
                         f"{self.my_peer.address.port} is now the miner (highest peer ID).")
-
+                    # No need to start a continuous task here, _trigger_mining will handle it
+                # Keep can_mine True if still the miner
             else:
                 if self.is_miner:
                     self.is_miner = False
+                    self.can_mine = False  # Stop mining when no longer the miner
                     print(f"{self.my_peer.address.port} is no longer the miner.")
         else:
-            pass
+            self.is_miner = False
+            self.can_mine = False
+            print(f"{self.my_peer.address.port}: No peers, not the miner.")
 
-    # TODO: is this method necessary?
     async def ensure_full_connectivity(self):
         current_time = time.time()
         elapsed_time = current_time - self.establishment_start_time
@@ -141,20 +152,21 @@ class MyCommunity(Community, PeerObserver):
 
         # Define your criteria for "full establishment" here.
         # For example, wait for a certain number of peers or a timeout.
-        if elapsed_time > self.establishment_timeout and num_connected > 0 and not self.network_established:
+        if elapsed_time > self.establishment_timeout and num_connected > 1 and not self.network_established:
             self.network_established = True
             print(f"{self.my_peer.address.port}:  Network considered established.")
 
             if self.is_miner and self.chain._get_length() == 0:
                 genesis_block = self.chain.create_genesis_block()
                 self.broadcast_block(genesis_block)
+                self.can_mine = True  # Allow mining after broadcasting genesis
 
             # Start generating transactions now that the network is established
             if self.generate_tx_task is None:
-                pass
-                # self.generate_tx_task = self.register_task(
-                #     'generate_transaction', self.generate_transaction, interval=2.0, delay=2
-                # )
+                print(f"{self.my_peer.address.port}: Start Sending Transaction.")
+                self.generate_tx_task = self.register_task(
+                    'generate_transaction', self.generate_transaction, interval=2.0, delay=5
+                )
         elif not self.network_established:
             connected_peers = set(self.network.verified_peers)
             for peer in connected_peers:
@@ -179,7 +191,7 @@ class MyCommunity(Community, PeerObserver):
             "bettor_id": bettor_id,
             "bet_number": bet_number,
             "bet_amount": bet_amount,
-            "timestamp": timestamp,
+            "timestamp": timestamp
         }
 
         signature = self.crypto.create_signature(
@@ -224,16 +236,15 @@ class MyCommunity(Community, PeerObserver):
                 #     f"Received and added valid transaction {txid} from {peer.address.port}")
                 peer_id_hex = peer.public_key.key_to_bin().hex()
                 self.latest_tx_timestamps[peer_id_hex] = max(
-                    self.latest_tx_timestamps.get(
-                        peer_id_hex, 0.0), payload.timestamp
-                )
+                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp)
+                # Trigger mining as new transactions arrive
+                if self.is_miner and self.network_established and self.can_mine:
+                    self._safely_register_mining_task()
             else:
                 # Optionally update timestamp even if transaction exists
                 peer_id_hex = peer.public_key.key_to_bin().hex()
                 self.latest_tx_timestamps[peer_id_hex] = max(
-                    self.latest_tx_timestamps.get(
-                        peer_id_hex, 0.0), payload.timestamp
-                )
+                    self.latest_tx_timestamps.get(peer_id_hex, 0.0), payload.timestamp)
         else:
             # print(f"Received invalid transaction from {peer.address.port}")
             pass
@@ -242,15 +253,10 @@ class MyCommunity(Community, PeerObserver):
     def on_get_transactions_request(self, peer: Peer, payload: TransactionsRequest):
         # print(f"Received request for transactions since {payload.last_seen_timestamp} from {peer.address.port}")
         latest_txs = self.tx_mempool.get_latest_transactions(
-            payload.last_seen_timestamp
-        )
+            payload.last_seen_timestamp)
         # Convert the list of transaction dictionaries to a JSON string
-        self.ez_send(
-            peer,
-            TransactionsResponse(
-                transactions=json.dumps([asdict(tx) for tx in latest_txs])
-            ),
-        )
+        self.ez_send(peer, TransactionsResponse(
+            transactions=json.dumps([asdict(tx) for tx in latest_txs])))
 
     @lazy_wrapper(TransactionsResponse)
     def on_transactions_response(self, peer: Peer, payload: TransactionsResponse):
@@ -266,15 +272,14 @@ class MyCommunity(Community, PeerObserver):
                     # print(f"Added received transaction: {txid}")
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
-                        self.latest_tx_timestamps.get(
-                            peer_id_hex, 0.0), tx.timestamp
-                    )
+                        self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp)
+                    # Trigger mining upon receiving new transactions
+                    if self.is_miner and self.network_established and self.can_mine:
+                        self._safely_register_mining_task()
                 else:
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
-                        self.latest_tx_timestamps.get(
-                            peer_id_hex, 0.0), tx.timestamp
-                    )
+                        self.latest_tx_timestamps.get(peer_id_hex, 0.0), tx.timestamp)
         except json.JSONDecodeError as e:
             # print(f"Error decoding transactions response from {peer.address.port}: {e}")
             pass
@@ -282,15 +287,29 @@ class MyCommunity(Community, PeerObserver):
     def broadcast_block(self, block: Block):
         for peer in self.get_peers():
             self.ez_send(peer, block)
-        print(f"{self.my_peer.address.port}: Genesis block broadcasted.")
+        print(f"{self.my_peer.address.port}: Block {block.index} broadcasted.")
+        # After broadcasting, allow for the next mining attempt
+        self.can_mine = True
 
     @lazy_wrapper(Block)
     def on_block(self, peer: Peer, payload: Block):
         print(
-            f"{self.my_peer.address.port}: Received block from {peer.address.port}: {payload.index}")
-        if self.chain._get_length() == 0:  # Only add if we don't have a chain yet
-            self.chain.validate_block(payload)
-            self.chain._add_block(payload)  # Assuming Validation is True
+            f"{self.my_peer.address.port}: Received block {payload.index} from {peer.address.port}")
+        if self.chain.validate_block(payload):
+            if self.chain._add_block(payload):
+                print(
+                    f"{self.my_peer.address.port}: Added block {payload.index} to the chain.")
+                self.tx_mempool.remove_transactions(payload.transactions)
+
+                # Optionally, trigger a new mining attempt after receiving a valid block
+                if self.is_miner and self.network_established and self.can_mine:
+                    self._safely_register_mining_task()
+            else:
+                print(
+                    f"{self.my_peer.address.port}: Block {payload.index} already in chain.")
+        else:
+            print(
+                f"{self.my_peer.address.port}: Invalid block {payload.index} received.")
 
     # Lottery
 
@@ -310,15 +329,13 @@ class MyCommunity(Community, PeerObserver):
         all_peers = list(self.get_peers()) + [self.my_peer]
         if all_peers:
             sorted_peers = sorted(
-                all_peers, key=lambda p: p.public_key.key_to_bin().hex()
-            )
+                all_peers, key=lambda p: p.public_key.key_to_bin().hex())
             broadcaster = sorted_peers[0]
             if broadcaster == self.my_peer:
                 self.is_lottery_broadcaster = True
                 print(
                     f"{broadcaster.address.port} is the lottery broadcaster (lowest peer ID).")
-            else:
-                self.is_lottery_broadcaster = False
+>>>>>>> e5fed4b (Update: Block Syncing)
         else:
             print("No peers available to select a lottery broadcaster.")
             self.is_lottery_broadcaster = False
@@ -328,9 +345,55 @@ class MyCommunity(Community, PeerObserver):
         print(
             f"Received lottery result for round {payload.round} from {peer.address.port}: Winning number is {payload.winning_number}. Total Amount is {payload.total_amount}")
         pass
+<<<<<<< HEAD
+=======
+
+    async def _mine_and_broadcast(self):
+        if self.is_miner and self.network_established and self.can_mine and self.tx_mempool.get_all_transactions():
+            self.can_mine = False  # Prevent concurrent mining
+            print(f"{self.my_peer.address.port}: Mining a new block...")
+            transactions_to_mine = self.tx_mempool.get_all_transactions()
+            if transactions_to_mine:
+                new_block = self.chain.create_block()
+                if new_block:
+                    self.broadcast_block(new_block)
+                    self.tx_mempool.clear_mempool()  # Clear mempool after successful mining
+                    print(
+                        f"{self.my_peer.address.port}: Successfully mined and broadcasted block {new_block.index}.")
+                else:
+                    print(
+                        f"{self.my_peer.address.port}: Failed to create a new block.")
+                    self.can_mine = True  # Allow retry later
+            else:
+                print(
+                    f"{self.my_peer.address.port}: No transactions in mempool to mine.")
+                self.can_mine = True  # Allow checking again later
+
+    async def _trigger_mining(self):
+        """Periodically checks if mining should be initiated."""
+        if self.is_miner and self.network_established and self.can_mine and self.tx_mempool.get_all_transactions():
+            self._safely_register_mining_task()
+>>>>>>> e5fed4b (Update: Block Syncing)
 
     def started(self) -> None:
         self.network.add_peer_observer(self)
 
         # Do not register generate_transaction here initially
         pass
+<<<<<<< HEAD
+=======
+
+    def _safely_register_mining_task(self, delay=2.0):
+        """
+        Safely register the mining task by first canceling any existing task.
+        This prevents the "task already existed" runtime error.
+        """
+        # Cancel the task if it exists
+        if self.is_pending_task_active(self.mining_task_name):
+            pass
+
+        else:
+            self.register_task(self.mining_task_name,
+                               self._mine_and_broadcast, delay=delay)
+            print(f"{self.my_peer.address.port}: Registered new mining task.")
+>>>>>>> e5fed4b (Update: Block Syncing)
