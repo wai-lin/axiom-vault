@@ -35,11 +35,7 @@ class Block:
         block_data = {
             "index": self.index,
             "timestamp": self.timestamp,
-<<<<<<< HEAD
-            "transactions": tuple(sorted([tuple(sorted(item.items())) for item in self.transactions])),
-=======
             "transactions": [asdict(item) for item in self.transactions],
->>>>>>> e5fed4b (Update: Block Syncing)
             "previous_hash": self.previous_hash,
             "winning_number": self.winning_number,
             "difficulty": self.difficulty,

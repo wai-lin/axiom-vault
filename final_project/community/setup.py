@@ -91,14 +91,11 @@ class MyCommunity(Community, PeerObserver):
         # Task to generate transactions, will be started conditionally
         self.generate_tx_task = None
 
-<<<<<<< HEAD
-=======
         # Initial call to start the mining cycle if this node is the initial miner
         self.mining_trigger_task = self.register_task(
             'trigger_mining', self._trigger_mining, interval=15.0, delay=10.0
         )
 
->>>>>>> e5fed4b (Update: Block Syncing)
     # Peer Set up
     def on_peer_added(self, peer: Peer) -> None:
         # print("I am:", self.my_peer, "I found:", peer)
@@ -335,7 +332,6 @@ class MyCommunity(Community, PeerObserver):
                 self.is_lottery_broadcaster = True
                 print(
                     f"{broadcaster.address.port} is the lottery broadcaster (lowest peer ID).")
->>>>>>> e5fed4b (Update: Block Syncing)
         else:
             print("No peers available to select a lottery broadcaster.")
             self.is_lottery_broadcaster = False
@@ -345,10 +341,9 @@ class MyCommunity(Community, PeerObserver):
         print(
             f"Received lottery result for round {payload.round} from {peer.address.port}: Winning number is {payload.winning_number}. Total Amount is {payload.total_amount}")
         pass
-<<<<<<< HEAD
-=======
 
     async def _mine_and_broadcast(self):
+
         if self.is_miner and self.network_established and self.can_mine and self.tx_mempool.get_all_transactions():
             self.can_mine = False  # Prevent concurrent mining
             print(f"{self.my_peer.address.port}: Mining a new block...")
@@ -373,21 +368,17 @@ class MyCommunity(Community, PeerObserver):
         """Periodically checks if mining should be initiated."""
         if self.is_miner and self.network_established and self.can_mine and self.tx_mempool.get_all_transactions():
             self._safely_register_mining_task()
->>>>>>> e5fed4b (Update: Block Syncing)
 
     def started(self) -> None:
         self.network.add_peer_observer(self)
 
         # Do not register generate_transaction here initially
         pass
-<<<<<<< HEAD
-=======
 
     def _safely_register_mining_task(self, delay=2.0):
-        """
-        Safely register the mining task by first canceling any existing task.
-        This prevents the "task already existed" runtime error.
-        """
+        if not self.is_miner:
+            pass
+
         # Cancel the task if it exists
         if self.is_pending_task_active(self.mining_task_name):
             pass
@@ -396,4 +387,3 @@ class MyCommunity(Community, PeerObserver):
             self.register_task(self.mining_task_name,
                                self._mine_and_broadcast, delay=delay)
             print(f"{self.my_peer.address.port}: Registered new mining task.")
->>>>>>> e5fed4b (Update: Block Syncing)
