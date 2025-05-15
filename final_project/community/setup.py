@@ -146,7 +146,7 @@ class MyCommunity(Community, PeerObserver):
 
             if self.is_miner and self.chain._get_length() == 0:
                 genesis_block = self.chain.create_genesis_block()
-                self.broadcast_block(genesis_block)
+                await self.broadcast_block(genesis_block)
 
             # Start generating transactions now that the network is established
             if self.generate_tx_task is None:
@@ -281,15 +281,13 @@ class MyCommunity(Community, PeerObserver):
         except json.JSONDecodeError as e:
             pass
 
-    def broadcast_block(self, block: Block):
+    async def broadcast_block(self, block: Block):
         for peer in self.get_peers():
             self.ez_send(peer, block)
         print(f"{self.my_peer.address.port}: Block {block.index} broadcasted.")
 
-        # After broadcasting, allow for the next mining attempt
-
     @lazy_wrapper(Block)
-    def on_block(self, peer: Peer, payload: Block):
+    async def on_block(self, peer: Peer, payload: Block):
         print(
             f"{self.my_peer.address.port}: Received block {payload.index} from {peer.address.port}")
         if self.chain.validate_block(payload):
@@ -372,7 +370,7 @@ class MyCommunity(Community, PeerObserver):
                     new_block = self.chain.create_block()
                     if new_block:
 
-                        self.broadcast_block(new_block)
+                        await self.broadcast_block(new_block)
 
                         self.tx_mempool.clear_mempool()  # Clear mempool after successful mining
                         print(
