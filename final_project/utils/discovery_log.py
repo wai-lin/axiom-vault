@@ -2,7 +2,7 @@ import json
 import os
 
 
-class WalkLogger:
+class PeerDiscoveryTracker:
     def __init__(self, id):
         self.path = f"data/{id}/peer_discovery.json"
         os.makedirs(os.path.dirname(self.path), exist_ok=True)

@@ -9,6 +9,9 @@ find . -maxdepth 1 -name "*.json" -delete
 if [ -d "data" ]; then
   rm -rf data/*
 fi
+if [ -d "round_reports" ]; then
+  rm -rf round_reports
+fi
 
 
 echo "cleanup complete."
