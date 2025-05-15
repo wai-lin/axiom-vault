@@ -19,7 +19,7 @@ from messages.transaction import TransactionsRequest, TransactionsResponse
 from messages.block import Block
 from messages.result import LotteryResult
 
-from utils.discovery_log import WalkLogger
+from utils.discovery_log import PeerDiscoveryTracker
 from utils.transaction_log import TxCoverageTracker
 
 
@@ -56,9 +56,8 @@ class MyCommunity(Community, PeerObserver):
 
         # Utils
         self.node_id = settings.node_id
-        self.walk_logger = WalkLogger(self.node_id)
+        self.peer_discovery_tracker = PeerDiscoveryTracker(self.node_id)
         self.tx_tracker = TxCoverageTracker(self.node_id)
-        self.round = 1  # TODO: edit after block has round id
 
         # Tasks
         self.register_task(
@@ -110,6 +109,7 @@ class MyCommunity(Community, PeerObserver):
     def on_peer_added(self, peer: Peer) -> None:
         # print("I am:", self.my_peer, "I found:", peer)
         self.walk_to(peer.address)
+        self.peer_discovery_tracker.update(self.my_peer.mid.hex(), peer.mid.hex())
         self._connected_peers.add(peer)
         # Track discovered peers
         self._known_peers.add(peer.public_key.key_to_bin().hex())
@@ -182,7 +182,7 @@ class MyCommunity(Community, PeerObserver):
                 self.generate_tx_task = self.register_task(
                     "generate_transaction",
                     self.generate_transaction,
-                    interval=2.0,
+                    interval=5.0,
                     delay=5,
                 )
         elif not self.network_established:
@@ -222,8 +222,10 @@ class MyCommunity(Community, PeerObserver):
             signature=signature.hex(),
         )
 
-        self.tx_mempool.add_transaction(payload._generate_txid(), payload)
-        # print(f"Generated and stored transaction: {payload._generate_txid()}")
+        txid = payload._generate_txid()
+        self.tx_mempool.add_transaction(txid, payload)
+        self.tx_tracker.record(self.chain._get_round_number(), txid, timestamp)
+        # print(f"Generated and stored transaction: {txid}")
 
     # Removed the dual-purpose request, now a dedicated request
     async def request_transactions(self):
@@ -246,6 +248,9 @@ class MyCommunity(Community, PeerObserver):
             txid = payload._generate_txid()
             if not self.tx_mempool.get_transaction(txid):
                 self.tx_mempool.add_transaction(payload._generate_txid(), payload)
+                self.tx_tracker.record(
+                    self.chain._get_round_number(), txid, payload.timestamp
+                )
                 # print(
                 #     f"Received and added valid transaction {txid} from {peer.address.port}")
                 peer_id_hex = peer.public_key.key_to_bin().hex()
@@ -289,6 +294,9 @@ class MyCommunity(Community, PeerObserver):
                 txid = tx._generate_txid()
                 if not self.tx_mempool.get_transaction(txid):
                     self.tx_mempool.add_transaction(tx._generate_txid(), tx)
+                    self.tx_tracker.record(
+                        self.chain._get_round_number(), txid, tx.timestamp
+                    )
                     # print(f"Added received transaction: {txid}")
                     peer_id_hex = peer.public_key.key_to_bin().hex()
                     self.latest_tx_timestamps[peer_id_hex] = max(
@@ -353,6 +361,8 @@ class MyCommunity(Community, PeerObserver):
                         ),
                     )
                 self.is_lottery_broadcaster = False  # Reset after broadcasting
+        self.tx_tracker.flush(self.chain._get_round_number())
+        self.tx_tracker.dump()
 
     async def select_lottery_broadcaster(self):
         all_peers = list(self.get_peers()) + [self.my_peer]
