@@ -9,10 +9,9 @@ from community.setup import MyCommunity
 import random
 
 
-async def start_network():
+async def start_network(key: int):
 
     builder = ConfigBuilder().clear_keys().clear_overlays()
-    key = random.randint(1, 1000)
     builder.add_key("my peer", "medium", f"ec_{key}.pem")
 
     builder.add_overlay(

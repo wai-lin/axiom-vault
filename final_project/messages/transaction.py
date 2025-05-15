@@ -9,3 +9,4 @@ class TransactionsRequest:
 @dataclass(msg_id=3)
 class TransactionsResponse:
     transactions: str
+    has_more: bool

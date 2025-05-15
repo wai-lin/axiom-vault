@@ -6,3 +6,4 @@ class LotteryResult:
     round: int
     winning_number: int
     total_amount: int
+    winner_list: str

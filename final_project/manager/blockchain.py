@@ -14,8 +14,7 @@ from typing import Optional, Dict
 from dataclasses import asdict
 
 
-BLOCKS_PER_ROUND = 12
-DEFAULT_DIFFICULTY = 1
+from constant import BLOCKS_PER_ROUND, DEFAULT_DIFFICULTY
 
 
 class BlockChain():
@@ -70,6 +69,7 @@ class BlockChain():
         self.chain.append(block)
         if self.db:
             self.db.save_block(block._to_dict())
+        return True
 
     def create_genesis_block(self) -> Block:
         genesis_block = Block(
@@ -144,9 +144,9 @@ class BlockChain():
 
         total_amount = 0
 
-        # print("Winning Number: ", winning_number)
-        # print("Length of Block: ", len(self.chain))
-        # print("Round Block: ", len(round_blocks))
+        print("Winning Number: ", winning_number)
+        print("Length of Block: ", len(self.chain))
+        print("Round Block: ", len(round_blocks))
         for block in round_blocks:
             # print("Transaction Length: ", len(block.transactions))
             for bet in block.transactions:
@@ -154,7 +154,5 @@ class BlockChain():
                     winner_list[bet.bettor_id] = winner_list.get(
                         bet.bettor_id, 0) + bet.bet_amount
                     total_amount = total_amount + bet.bet_amount
-
-        print("Winner List:", winner_list)
 
         return winning_number, total_amount, winner_list

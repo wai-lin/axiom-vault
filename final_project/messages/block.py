@@ -4,7 +4,6 @@ from messages.betpayload import BetPayload
 
 
 import json
-import hashlib
 from dataclasses import asdict
 
 

@@ -21,10 +21,10 @@ class Mempool:
 
     def add_transaction(self, txid: str, payload: BetPayload) -> bool:
         if txid in self._mempool:
-            print(f"Transaction with TXID {txid} already in mempool.")
+            # print(f"Transaction with TXID {txid} already in mempool.")
             return False
         self._mempool[txid] = asdict(payload)
-        print(f"Transaction {txid} added to mempool.")
+        # print(f"Transaction {txid} added to mempool.")
         return True
 
     def get_transaction(self, txid: str) -> Optional[BetPayload]:
@@ -36,8 +36,10 @@ class Mempool:
     def remove_single_transaction(self, txid: str) -> bool:
         if txid in self._mempool:
             del self._mempool[txid]
-            print(f"Transaction {txid} removed from mempool.")
-        print(f"Transaction {txid} not found in mempool.")
+            # print(f"Transaction {txid} removed from mempool.")
+            return True
+        # print(f"Transaction {txid} not found in mempool.")
+        return False
 
     def remove_transactions(self, transactions: BetPayload):
         txn_list = [tx._generate_txid() for tx in transactions]
