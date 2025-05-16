@@ -1,5 +1,9 @@
 # Axiom Vault
 
+## Description
+
+This is a blockchain-based implementation of Myanmar’s popular 2-digits lottery.
+
 ## Presentation
 
 [https://pitch.com/v/m11-axiom-vault-fundamentals-of-blockchain-hsvp24](https://pitch.com/v/m11-axiom-vault-fundamentals-of-blockchain-hsvp24)
